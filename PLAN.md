@@ -1,0 +1,275 @@
+# Plan: Demo Técnica → Sistema de Inventario para Tienda de Abarrotes
+
+## Estado actual
+
+✅ **Demo técnica completada** — lector de códigos de barras funcionando en Expo Go (SDK 54), consultando Open Food Facts y mostrando resultado + latencia en un modal. Ver detalle de esa fase en la sección [Demo técnica (completada)](#demo-técnica-completada).
+
+🔜 **Próxima fase**: la demo cumplió su función (validar escaneo continuo + latencia de API), pero reveló que la API pública no cubre el catálogo real de la tienda. Se definió el concepto de un **sistema de inventario propio**, documentado abajo, listo para diseñar e implementar en una próxima sesión.
+
+---
+
+## Próxima fase — Sistema de Inventario
+
+> Decisiones de arquitectura confirmadas en sesión de planificación (2026-06-17): SQLite = fuente de verdad / Firestore = solo respaldo · target **Expo Go** · stock con conteo inicial + ajustes · soporte de productos a granel.
+
+### Contexto del negocio
+- Tienda tradicional de abarrotes y consumo, manejo de todo en papel.
+- Dificultad para hacer **balance** por la cantidad de tipos de producto y unidades de cada uno.
+- **Un solo usuario** (dueño/encargado), 99% Android.
+- Debe funcionar **100% offline** (conectividad inestable es la norma en este tipo de tiendas).
+
+### Arquitectura de datos (decidida)
+- **SQLite local (`expo-sqlite`) = única fuente de verdad operativa.** Todo el catálogo y los movimientos viven aquí; la app lee y escribe siempre contra SQLite, online u offline. Funciona en Expo Go.
+- **Firestore = solo respaldo (espejo unidireccional).** No se lee desde Firestore en operación normal; sirve únicamente para recuperar los datos si se pierde/cambia el teléfono. Se descartó usarlo como base offline-first para no tener dos bases locales con lógica de reconciliación.
+- **Cómo se respalda (en Expo Go):** Firebase **JS SDK** (no nativo). Cada fila modificada se marca con `synced=0` + `updated_at`; un proceso ligero empuja los pendientes a colecciones espejo en Firestore (`productos`, `transacciones`, `transaccion_items`) **mientras la app está abierta y hay red**, y los marca `synced=1`. Filas pequeñas → muy por debajo del límite de 1 MB por documento.
+- **Limitación asumida del target Expo Go:** no hay sincronización real con la app cerrada (eso exigiría *development build* + tareas nativas en background). El respaldo corre al abrir la app / al recuperar conexión con la app en uso. Aceptable para un solo usuario que abre la app a diario. (Si en el futuro se quiere respaldo en background del SO o Firebase nativo, hay que migrar a dev build / EAS.)
+- Sin sincronización multi-dispositivo/usuario (alcance actual: un solo dispositivo).
+
+### Carga inicial del catálogo
+- No existe listado digital previo → se construye con una **sesión dedicada de escaneo**: recorrer la tienda escaneando cada producto y completando sus datos ahí mismo.
+- Por producto nuevo, dos modos de precio (selector en el formulario):
+  - **"Calcular con margen"** → ingresas costo, la app sugiere precio = costo × (1 + margen%).
+  - **"Precio fijo"** → ingresas el precio directo, sin cálculo (costo opcional, solo referencial).
+- **% de margen general** configurable en ajustes, con posibilidad de override por producto específico.
+- **Conteo inicial de stock:** al dar de alta cada producto se captura su **cantidad inicial** (`stock_actual` de arranque). Queda registrado como un movimiento de "inventario inicial" para trazabilidad (ver tipo `ajuste`).
+
+### Productos a granel / sin código de barras (confirmado: existen)
+- Vía de **alta y búsqueda manual por nombre**, paralela al escaneo, sin entorpecer el flujo principal.
+- A cada producto sin código se le asigna un **código interno autogenerado** (ej. prefijo `INT-` + correlativo) que ocupa el mismo campo `barcode`, para que el resto del modelo (líneas de transacción, reportes) no necesite casos especiales.
+- En las pantallas de compra/venta debe existir un botón **"Agregar sin escanear"** que abre el buscador por nombre.
+
+### Manejo de stock y exactitud (decidido)
+- `stock_actual` por producto se mantiene incrementalmente: **compra (+)**, **venta (−)**, **ajuste (±)**.
+- **Tipo de transacción `ajuste`** para mantener el stock fiel a la realidad: merma, caducidad, robo, conteo físico, e inventario inicial. Cada ajuste guarda un **motivo** (texto/categoría) para trazabilidad y para no contaminar los reportes de ventas/compras.
+- Los reportes de dinero (ventas, compras, utilidad) **no** cuentan los `ajuste` como ingreso/egreso; los ajustes solo afectan stock (y, si se desea, una métrica separada de "merma valorizada").
+
+### Operación diaria — transacciones agrupadas (modo sesión explícito)
+1. El usuario presiona **"Nueva compra"**, **"Nueva venta"** o **"Ajuste de inventario"**.
+2. Agrega productos por **escaneo** o con **"Agregar sin escanear"** (búsqueda por nombre, para granel): cada producto nuevo agrega una línea (producto, cantidad=1, precio unitario, subtotal); **re-escanear el mismo código incrementa la cantidad** de su línea (no duplica) — imita el gesto de pasar cada unidad por el lector.
+3. Cantidad ajustable manualmente (+/-) para casos donde escanear N veces no es práctico (ej. compra por mayor).
+4. **Total visible en tiempo real**, sumando todas las líneas (no aplica a `ajuste`).
+5. Ingreso opcional de **nombre de cliente/proveedor** (texto libre) — en `ajuste`, opcional **motivo**.
+6. **"Finalizar"** → guarda la transacción con: `id`, `tipo` (compra/venta/ajuste), `fecha_hora`, `cliente_proveedor`, `motivo?`, `items[]`, **`total`**, y aplica los deltas a `stock_actual`.
+
+> **Decisión de modelado clave**: cada ítem de la transacción guarda un *snapshot* del precio/costo **al momento de la operación** (no una referencia al precio actual del catálogo). Sin esto, los reportes de meses anteriores quedarían distorsionados cuando los precios cambien.
+
+### Trazabilidad
+- Historial de operaciones filtrable por fecha, tipo (compra/venta/ajuste) y cliente/proveedor (texto libre).
+- Sin lógica de deudas/créditos pendientes — solo registro ordenado para seguimiento.
+
+### Balance / Reportes (módulo de analítica)
+Ejemplos del usuario:
+- Valor en dinero del stock disponible.
+- Total de operaciones por día/semana/mes.
+- Gráfico histórico de esos totales (semana/mes).
+- Gasto en compras a proveedores del mes.
+
+Sugerencias adicionales que se derivan del mismo modelo de datos sin rediseño:
+- **Utilidad/margen real del período** (ventas − costo de lo vendido), posible gracias al snapshot de costo+precio.
+- **Ranking de productos**: más vendidos (por unidades o ingreso) y productos sin movimiento ("stock estancado").
+- **Valor del inventario en dos vistas**: al costo (inversión) vs al precio de venta (ganancia potencial).
+- **Ticket promedio de venta**.
+- **Comparativas entre períodos** (mes actual vs anterior, % de variación).
+- **Top proveedores por gasto acumulado**.
+
+El usuario indicó que seguirá refinando esta lista con el uso real de la app — el modelo de datos (transacciones con ítems + totales + snapshots fechados) soporta nuevas métricas sin cambios estructurales.
+
+### Modelo de datos (borrador para diseñar en la próxima sesión)
+- `productos`: `barcode` (PK; código real o interno `INT-...` para granel), `nombre`, `sin_codigo` (bool, granel), `costo`, `precio`, `modo_precio` (margen/fijo), `margen_pct` (override, nullable), `stock_actual`, `categoria?`, `updated_at`, `synced` (0/1)
+- `transacciones`: `id`, `tipo` (compra/venta/ajuste), `fecha_hora`, `cliente_proveedor?`, `motivo?` (para ajuste), `total`, `updated_at`, `synced`
+- `transaccion_items`: `transaccion_id`, `barcode`, `nombre_snapshot`, `cantidad` (puede ser ± en ajuste), `costo_snapshot`, `precio_unitario_snapshot`, `subtotal`, `synced`
+- `configuracion`: `margen_general_pct`
+- *Nota:* `costo_snapshot` en los ítems es lo que habilita el cálculo de utilidad/margen real del período.
+
+### Pendiente para la próxima sesión
+- Diseñar el esquema definitivo SQLite (`expo-sqlite`) con los campos `synced`/`updated_at` para el espejo incremental a Firestore (JS SDK).
+- Definir el proyecto Firebase + reglas de seguridad mínimas (auth anónima) para el respaldo.
+- Definir pantallas: carga inicial, nueva compra/venta, ajuste de inventario, buscador de productos (granel), historial/trazabilidad, reportes.
+- Gráficos del módulo de reportes: **`react-native-chart-kit`** (JS puro, compatible con Expo Go). `victory-native` queda descartado mientras sigamos en Expo Go (usa Skia → dev build).
+- Definir cómo evoluciona el código de la demo actual hacia este sistema (reusar el flujo de escaneo + modal ya construido y probado).
+
+---
+
+## Diseño técnico — Esquema SQLite + Pantallas
+
+> Diseñado el 2026-06-17. Target Expo Go / SDK 54, `expo-sqlite` (API async). **Plan básico**: SQLite = verdad, Firestore = espejo de respaldo (no incluido en este diseño de esquema, solo se reservan los campos `synced`/`updated_at`).
+
+### Convenciones
+- **Dinero = enteros en pesos colombianos (COP)** (sin decimales; los centavos no se usan en la práctica). Los cálculos con margen redondean al peso (`ROUND`). Si en el futuro se usa una moneda con centavos, migrar a enteros de centavos.
+- **Fechas = TEXT en ISO 8601** local (`YYYY-MM-DDTHH:mm:ss`), para que los filtros por rango y los `GROUP BY` por día/mes funcionen con comparación de strings.
+- **IDs = TEXT (UUID v4)** para transacciones e ítems (evita colisiones y facilita el espejo a Firestore con el mismo id de documento).
+- **Borrado lógico** (`activo = 0`) en productos: nunca se borra físico, así los snapshots históricos y el espejo siguen siendo válidos.
+- **`synced` (0/1) + `updated_at`** en las filas respaldables: el job de respaldo selecciona `WHERE synced = 0`, sube el documento a Firestore con su id y marca `synced = 1`. Sin tombstones porque el borrado es lógico.
+
+### Esquema (DDL)
+
+```sql
+-- Al abrir la base:
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+-- v1 ---------------------------------------------------------------
+CREATE TABLE productos (
+  barcode        TEXT PRIMARY KEY,                 -- EAN/UPC real o interno 'INT-000123'
+  nombre         TEXT    NOT NULL,
+  sin_codigo     INTEGER NOT NULL DEFAULT 0,       -- 1 = granel / sin código de barras
+  categoria      TEXT,
+  modo_precio    TEXT    NOT NULL DEFAULT 'margen' -- 'margen' | 'fijo'
+                   CHECK (modo_precio IN ('margen','fijo')),
+  costo          INTEGER,                          -- COP; nullable en 'fijo'
+  margen_pct     REAL,                             -- override; NULL = usa margen_general_pct
+  precio         INTEGER NOT NULL,                 -- COP; precio de venta vigente
+  stock_actual   INTEGER NOT NULL DEFAULT 0,
+  activo         INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT    NOT NULL,
+  updated_at     TEXT    NOT NULL,
+  synced         INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE transacciones (
+  id                TEXT PRIMARY KEY,              -- UUID
+  tipo              TEXT NOT NULL
+                      CHECK (tipo IN ('compra','venta','ajuste')),
+  fecha_hora        TEXT NOT NULL,                 -- ISO 8601 local
+  cliente_proveedor TEXT,                          -- texto libre, opcional
+  motivo            TEXT,                          -- solo 'ajuste' (merma, caducidad, conteo, inventario inicial)
+  total             INTEGER NOT NULL DEFAULT 0,    -- COP; 0 en 'ajuste'
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  synced            INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE transaccion_items (
+  id                       TEXT PRIMARY KEY,       -- UUID
+  transaccion_id           TEXT NOT NULL
+                             REFERENCES transacciones(id) ON DELETE CASCADE,
+  barcode                  TEXT NOT NULL,          -- referencia laxa (sin FK): el snapshot debe sobrevivir
+  nombre_snapshot          TEXT NOT NULL,
+  cantidad                 INTEGER NOT NULL,       -- >0 en compra/venta; ± en ajuste
+  costo_snapshot           INTEGER,                -- COP al momento de la operación
+  precio_unitario_snapshot INTEGER NOT NULL,       -- COP al momento de la operación
+  subtotal                 INTEGER NOT NULL,       -- cantidad * precio_unitario_snapshot
+  synced                   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE configuracion (
+  clave TEXT PRIMARY KEY,                          -- 'margen_general_pct', 'moneda', 'correlativo_interno', ...
+  valor TEXT NOT NULL
+);
+
+-- Índices
+CREATE INDEX idx_tx_fecha        ON transacciones(fecha_hora);
+CREATE INDEX idx_tx_tipo_fecha   ON transacciones(tipo, fecha_hora);
+CREATE INDEX idx_items_tx        ON transaccion_items(transaccion_id);
+CREATE INDEX idx_items_barcode   ON transaccion_items(barcode);     -- rankings de productos
+CREATE INDEX idx_prod_nombre     ON productos(nombre);              -- búsqueda granel
+CREATE INDEX idx_prod_activo     ON productos(activo);
+-- Para el job de respaldo (parciales, livianos):
+CREATE INDEX idx_prod_unsynced   ON productos(synced)      WHERE synced = 0;
+CREATE INDEX idx_tx_unsynced     ON transacciones(synced)  WHERE synced = 0;
+CREATE INDEX idx_items_unsynced  ON transaccion_items(synced) WHERE synced = 0;
+```
+
+### Reglas de negocio sobre el esquema
+- **Aplicación de stock al finalizar** (dentro de una `withTransactionAsync`): `compra → stock += cantidad`; `venta → stock -= cantidad`; `ajuste → stock += cantidad` (cantidad puede ser negativa).
+- **Inventario inicial** = transacción `ajuste` con `motivo = 'inventario inicial'` y un ítem por producto con la cantidad contada. Así el stock de arranque queda trazado, no "aparecido de la nada".
+- **Cálculo de precio sugerido** (modo margen): `precio = ROUND(costo * (1 + margen_efectivo/100))`, donde `margen_efectivo = COALESCE(productos.margen_pct, configuracion.margen_general_pct)`. El precio se materializa en `productos.precio` (no se recalcula al vuelo) para que el catálogo sea estable y la venta tome un valor fijo.
+- **Reportes de dinero ignoran `ajuste`**: ventas/compras/utilidad filtran `tipo IN ('venta','compra')`. La merma valorizada, si se quiere, sale de `tipo = 'ajuste' AND cantidad < 0` usando `costo_snapshot`.
+- **`total` se valida**: al finalizar, `total == SUM(subtotal de sus ítems)`.
+
+### Migraciones (`expo-sqlite`, patrón `user_version`)
+```ts
+const DB_NAME = 'inventario.db';
+const TARGET_VERSION = 1;
+
+export async function openDb() {
+  const db = await SQLite.openDatabaseAsync(DB_NAME);
+  await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+
+  let { user_version = 0 } =
+    (await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version')) ?? {};
+
+  if (user_version < 1) {
+    await db.withTransactionAsync(async () => {
+      await db.execAsync(/* DDL v1 de arriba */);
+      await db.runAsync(
+        "INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('margen_general_pct','30'), ('moneda','COP'), ('correlativo_interno','0')"
+      );
+    });
+    await db.execAsync('PRAGMA user_version = 1');
+    user_version = 1;
+  }
+  // if (user_version < 2) { ... } futuras migraciones aditivas
+  return db;
+}
+```
+Las migraciones futuras son **aditivas** (nuevas tablas/columnas, nunca renombrar/borrar) para no romper el espejo de respaldo.
+
+### Estructura de pantallas (Expo Router, file-based)
+Adoptar **`expo-router`** (estándar Expo, funciona en Expo Go) con **tabs inferiores**. Esto cambia el layout del proyecto: el `App.tsx` actual se descompone en rutas dentro de `app/`. El motor de escaneo de la demo (`CameraView` + pausa + modal) se extrae a un componente reutilizable.
+
+```
+app/
+├── _layout.tsx                 # Stack raíz + init de la DB (openDb)
+├── (tabs)/
+│   ├── _layout.tsx             # Tabs inferiores
+│   ├── index.tsx               # OPERAR: botones grandes Venta / Compra / Ajuste
+│   ├── catalogo.tsx            # Lista + búsqueda de productos; FAB "Agregar"
+│   ├── historial.tsx           # Lista de transacciones + filtros (fecha/tipo/contraparte)
+│   ├── reportes.tsx            # Métricas + gráficos (react-native-chart-kit)
+│   └── ajustes.tsx             # Margen general, moneda, estado de respaldo/sync, exportar
+├── transaccion/
+│   └── [tipo].tsx              # SESIÓN compra|venta|ajuste: scanner + líneas + total + finalizar
+├── producto/
+│   ├── nuevo.tsx               # Alta de producto (formulario; precandidato desde un scan)
+│   └── [barcode].tsx           # Editar producto / ver stock y movimientos
+├── carga-inicial.tsx           # Modo escaneo continuo: nuevo→alta, existente→ajuste de conteo
+└── detalle/
+    └── [id].tsx                # Detalle de una transacción (ítems + total)
+```
+
+Componentes compartidos (`components/`):
+- `ScannerView` — `CameraView` con pausa anti-metralleta (extraído de la demo).
+- `BuscadorProducto` — modal de búsqueda por nombre, para "Agregar sin escanear" (granel) y para el catálogo.
+- `LineaItem` — fila editable (cantidad +/-, subtotal) usada en la sesión de transacción.
+
+Flujos clave:
+- **Sesión de transacción** (`transaccion/[tipo]`): scanner activo → código nuevo agrega línea (cant=1) / re-escaneo incrementa; botón "Agregar sin escanear" abre `BuscadorProducto`; si el código no existe en catálogo, ofrece alta rápida (`producto/nuevo` con el barcode precargado) y vuelve a la sesión. Total en vivo. "Finalizar" persiste en una transacción atómica y aplica stock.
+- **Carga inicial** (`carga-inicial`): pensada para la primera puesta en marcha; escaneo continuo donde cada producto desconocido salta a alta con conteo inicial, y los conocidos permiten corregir el conteo.
+
+### Capa de datos (`db/`)
+- `db/index.ts` — `openDb()` + migraciones (arriba).
+- `db/productos.ts`, `db/transacciones.ts`, `db/reportes.ts` — funciones tipadas (`getAllAsync`/`runAsync`) que encapsulan el SQL; las pantallas nunca escriben SQL crudo.
+- Cada `INSERT`/`UPDATE` setea `updated_at = now()` y `synced = 0`.
+
+---
+
+## Demo técnica (completada)
+
+Prueba de concepto minimalista para validar:
+1. Rendimiento del **escaneo continuo** de códigos EAN-13 / UPC en tiempo real.
+2. **Velocidad de respuesta** al consultar Open Food Facts.
+
+Target: **Expo Go**.
+
+### Decisión técnica clave
+Para **Expo Go**, `react-native-vision-camera` **no es viable** (requiere *development build* nativo). Se usó **`expo-camera`** con `CameraView` y `onBarcodeScanned`.
+
+> **Nota sobre versión de SDK**: el proyecto se creó inicialmente con Expo SDK 56 (la última disponible vía `create-expo-app`), pero **Expo Go publicado en la Play Store solo soportaba hasta SDK 54** en ese momento (SDK 56 era demasiado reciente para haber llegado a las tiendas). Se bajó el proyecto a `expo@^54.0.0` con `npx expo install --fix` + reinstalación limpia de `node_modules` para alinear todas las dependencias. Si en el futuro se actualiza Expo Go en la tienda, se puede subir el SDK del proyecto nuevamente.
+
+### Decisiones del usuario
+- **Lenguaje:** TypeScript
+- **Anti-metralleta:** pausar escaneo (cámara viva, se ignoran lecturas mientras el modal está abierto)
+- **Métricas:** mostrar **latencia de la API en ms** en el modal
+- **Idioma UI:** Español
+
+### Implementación (resumen)
+- `App.tsx`: pantalla única con `CameraView` a pantalla completa, `barcodeScannerSettings` para EAN-13/EAN-8/UPC-A/UPC-E, `onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}` (pausa canónica), fetch a Open Food Facts con medición de latencia (`Date.now()`), y Modal con spinner / nombre del producto / mensaje de error / latencia / botón "Escanear de nuevo".
+- `app.json`: plugin `expo-camera` con permiso de cámara en español.
+- Botón flotante "↻ Reiniciar escáner".
+
+### Verificación realizada
+- `tsc --noEmit` sin errores.
+- `expo export --platform android` empaqueta el bundle correctamente (580 módulos).
+- `npx expo install --check` confirma dependencias alineadas con SDK 54.
+- Pendiente de prueba manual en dispositivo físico con Expo Go (requiere cámara real).
