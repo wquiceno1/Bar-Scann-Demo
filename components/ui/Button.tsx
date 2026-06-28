@@ -9,7 +9,14 @@ import {
 } from 'react-native';
 import { colors, font, radius, spacing } from '../../theme/tokens';
 
-type Variant = 'primary' | 'venta' | 'compra' | 'ajuste' | 'secondary' | 'ghost';
+type Variant =
+  | 'primary'
+  | 'venta'
+  | 'compra'
+  | 'ajuste'
+  | 'danger'
+  | 'secondary'
+  | 'ghost';
 type Size = 'md' | 'lg' | 'hero';
 
 const BG: Record<Variant, string> = {
@@ -17,6 +24,7 @@ const BG: Record<Variant, string> = {
   venta: colors.venta,
   compra: colors.compra,
   ajuste: colors.ajuste,
+  danger: colors.danger,
   secondary: colors.surface,
   ghost: 'transparent',
 };

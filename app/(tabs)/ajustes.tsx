@@ -18,6 +18,7 @@ import {
   usuarioActual,
 } from '../../lib/auth';
 import { estadoRespaldo, respaldar } from '../../lib/backup';
+import { vaciarDatosLocales } from '../../db/mantenimiento';
 import { toast } from '../../lib/feedback';
 import { colors, font, spacing } from '../../theme/tokens';
 
@@ -54,6 +55,7 @@ export default function AjustesScreen() {
   const [huellaConf, setHuellaConf] = useState(false);
   const [ultimo, setUltimo] = useState<string | null>(null);
   const [pendientes, setPendientes] = useState(0);
+  const [vaciando, setVaciando] = useState(false);
   // Guarda la contraseña de la sesión actual para poder activar la huella
   // sin volver a pedirla. Se limpia al cerrar sesión.
   const pwRef = useRef<string | null>(null);
@@ -175,6 +177,32 @@ export default function AjustesScreen() {
     toast('Sesión cerrada');
   };
 
+  const vaciarBase = () => {
+    Alert.alert(
+      'Vaciar base de datos',
+      'Esto borra todos los productos y movimientos guardados en este teléfono. No se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Vaciar',
+          style: 'destructive',
+          onPress: async () => {
+            setVaciando(true);
+            try {
+              await vaciarDatosLocales(db);
+              await refrescar();
+              toast('Base de datos vaciada');
+            } catch (e) {
+              Alert.alert('No se pudo vaciar', mensajeError(e));
+            } finally {
+              setVaciando(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Screen padded scroll>
       <Card style={{ gap: spacing.md }}>
@@ -270,6 +298,26 @@ export default function AjustesScreen() {
             )}
           </>
         )}
+      </Card>
+
+      <Card style={[styles.respaldo, { gap: spacing.sm }]}>
+        <View style={styles.head}>
+          <Ionicons name="trash-outline" size={20} color={colors.danger} />
+          <Text style={styles.title}>Zona de pruebas</Text>
+        </View>
+        <Text style={styles.help}>
+          Borra productos y movimientos guardados en este teléfono. Útil
+          antes y después de una prueba de campo.
+          {usuario &&
+            ' Tienes sesión iniciada: si hay internet, los datos podrían volver a sincronizarse solos desde el respaldo. Cierra sesión antes si quieres una base completamente vacía.'}
+        </Text>
+        <Button
+          label="Vaciar base de datos"
+          icon="trash"
+          variant="danger"
+          loading={vaciando}
+          onPress={vaciarBase}
+        />
       </Card>
     </Screen>
   );
