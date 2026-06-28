@@ -176,7 +176,7 @@ export default function AjustesScreen() {
   };
 
   return (
-    <Screen padded>
+    <Screen padded scroll>
       <Card style={{ gap: spacing.md }}>
         <Input
           label="Margen general (%)"

@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Pressable,
   StyleSheet,
   Text,
@@ -137,7 +138,7 @@ export default function TransaccionScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
       <Stack.Screen options={{ title: TITULOS[tipo] }} />
 
       <View style={styles.scanner}>
@@ -241,7 +242,7 @@ export default function TransaccionScreen() {
           onPress={finalizar}
         />
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

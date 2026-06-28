@@ -114,7 +114,7 @@ export default function RecuperarGate() {
 
   return (
     <Modal visible={visible} animationType="slide">
-      <Screen padded style={styles.fill}>
+      <Screen padded scroll style={styles.fill}>
         <View style={styles.head}>
           <Text style={styles.titulo}>Recuperar respaldo</Text>
           <Text style={styles.sub}>
