@@ -1,11 +1,13 @@
 import type { SQLiteBindValue, SQLiteDatabase } from 'expo-sqlite';
 import type {
   LineaBorrador,
+  ModoPrecio,
   TipoTransaccion,
   Transaccion,
   TransaccionItem,
 } from './types';
-import { newId, nowIso } from './util';
+import { getMargenGeneral } from './configuracion';
+import { newId, nowIso, precioConMargen } from './util';
 
 export type NuevaTransaccion = {
   tipo: TipoTransaccion;
@@ -37,6 +39,8 @@ export async function finalizarTransaccion(
         (acc, l) => acc + l.cantidad * l.precio_unitario_snapshot,
         0
       );
+
+  const margenGeneral = t.tipo === 'compra' ? await getMargenGeneral(db) : 0;
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
@@ -78,6 +82,38 @@ export async function finalizarTransaccion(
         ts,
         l.barcode
       );
+
+      // En compras, el costo de la línea pasa a ser el costo del producto; si
+      // su precio se calcula con margen, se recalcula también el precio de venta.
+      if (t.tipo === 'compra' && l.costo_snapshot != null) {
+        const prod = await db.getFirstAsync<{
+          modo_precio: ModoPrecio;
+          margen_pct: number | null;
+        }>(
+          'SELECT modo_precio, margen_pct FROM productos WHERE barcode = ?',
+          l.barcode
+        );
+        if (prod?.modo_precio === 'margen') {
+          await db.runAsync(
+            `UPDATE productos
+               SET costo = ?, precio = ?, updated_at = ?, synced = 0
+             WHERE barcode = ?`,
+            l.costo_snapshot,
+            precioConMargen(l.costo_snapshot, prod.margen_pct ?? margenGeneral),
+            ts,
+            l.barcode
+          );
+        } else {
+          await db.runAsync(
+            `UPDATE productos
+               SET costo = ?, updated_at = ?, synced = 0
+             WHERE barcode = ?`,
+            l.costo_snapshot,
+            ts,
+            l.barcode
+          );
+        }
+      }
     }
   });
 

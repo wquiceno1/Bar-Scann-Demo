@@ -7,6 +7,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
@@ -116,6 +117,18 @@ export default function TransaccionScreen() {
     );
   };
 
+  // En compras: editar el costo unitario que cobró el proveedor.
+  const cambiarCosto = (barcode: string, texto: string) => {
+    const n = Number(texto.replace(/[^\d]/g, '')) || 0;
+    setLineas((prev) =>
+      prev.map((l) =>
+        l.barcode === barcode
+          ? { ...l, precio_unitario_snapshot: n, costo_snapshot: n }
+          : l
+      )
+    );
+  };
+
   const finalizar = async () => {
     if (lineas.length === 0) {
       Alert.alert('Sin productos', 'Agrega al menos un producto.');
@@ -187,28 +200,62 @@ export default function TransaccionScreen() {
         }
         renderItem={({ item }) => (
           <View style={styles.linea}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.lineaNombre}>{item.nombre}</Text>
-              <Text style={styles.lineaMeta}>
-                {formatCOP(item.precio_unitario_snapshot)} c/u
-              </Text>
+            <Text style={styles.lineaNombre}>{item.nombre}</Text>
+            <View style={styles.lineaMain}>
+              {tipo !== 'ajuste' && (
+                <View style={styles.col}>
+                  <Text style={styles.colLabel}>
+                    {tipo === 'compra' ? 'Costo c/u' : 'Precio c/u'}
+                  </Text>
+                  {tipo === 'compra' ? (
+                    <TextInput
+                      style={styles.costoInput}
+                      keyboardType="numeric"
+                      value={
+                        item.precio_unitario_snapshot
+                          ? String(item.precio_unitario_snapshot)
+                          : ''
+                      }
+                      onChangeText={(texto) => cambiarCosto(item.barcode, texto)}
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  ) : (
+                    <Text style={styles.colValue}>
+                      {formatCOP(item.precio_unitario_snapshot)}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              <View style={styles.col}>
+                <Text style={styles.colLabel}>Cantidad</Text>
+                <View style={styles.qtyControls}>
+                  <Pressable
+                    style={styles.qtyBtn}
+                    onPress={() => cambiarCantidad(item.barcode, -1)}
+                  >
+                    <Ionicons name="remove" size={18} color={colors.text} />
+                  </Pressable>
+                  <Text style={styles.qty}>{item.cantidad}</Text>
+                  <Pressable
+                    style={styles.qtyBtn}
+                    onPress={() => cambiarCantidad(item.barcode, 1)}
+                  >
+                    <Ionicons name="add" size={18} color={colors.text} />
+                  </Pressable>
+                </View>
+              </View>
+
+              {tipo !== 'ajuste' && (
+                <View style={[styles.col, styles.colRight]}>
+                  <Text style={styles.colLabel}>Total</Text>
+                  <Text style={styles.subtotal}>
+                    {formatCOP(item.cantidad * item.precio_unitario_snapshot)}
+                  </Text>
+                </View>
+              )}
             </View>
-            <Pressable
-              style={styles.qtyBtn}
-              onPress={() => cambiarCantidad(item.barcode, -1)}
-            >
-              <Ionicons name="remove" size={18} color={colors.text} />
-            </Pressable>
-            <Text style={styles.qty}>{item.cantidad}</Text>
-            <Pressable
-              style={styles.qtyBtn}
-              onPress={() => cambiarCantidad(item.barcode, 1)}
-            >
-              <Ionicons name="add" size={18} color={colors.text} />
-            </Pressable>
-            <Text style={styles.subtotal}>
-              {formatCOP(item.cantidad * item.precio_unitario_snapshot)}
-            </Text>
           </View>
         )}
       />
@@ -278,8 +325,6 @@ const styles = StyleSheet.create({
   empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
   emptyText: { color: colors.textMuted, fontSize: font.md },
   linea: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
@@ -287,7 +332,32 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   lineaNombre: { fontSize: font.md, fontWeight: '700', color: colors.text },
-  lineaMeta: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
+  lineaMain: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+  },
+  col: { gap: spacing.xs },
+  colRight: { alignItems: 'flex-end' },
+  colLabel: { fontSize: font.xs, color: colors.textMuted, fontWeight: '600' },
+  colValue: { fontSize: font.md, fontWeight: '700', color: colors.text },
+  qtyControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  costoInput: {
+    width: 100,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    fontSize: font.md,
+    color: colors.text,
+    backgroundColor: colors.surfaceAlt,
+  },
   qtyBtn: {
     width: 34,
     height: 34,
