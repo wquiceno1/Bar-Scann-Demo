@@ -21,7 +21,6 @@ import { db as firestore } from './firebase';
 
 // writeBatch admite hasta 500 operaciones; dejamos margen.
 const LIMITE_LOTE = 400;
-const UN_DIA_MS = 24 * 60 * 60 * 1000;
 
 const TABLAS_SYNC = ['productos', 'transacciones', 'transaccion_items'] as const;
 
@@ -43,7 +42,7 @@ function enSerie<T>(tarea: () => Promise<T>): Promise<T> {
   return resultado;
 }
 
-async function contarPendientes(db: SQLiteDatabase): Promise<number> {
+export async function contarPendientes(db: SQLiteDatabase): Promise<number> {
   let total = 0;
   for (const t of TABLAS_SYNC) {
     const row = await db.getFirstAsync<{ n: number }>(
@@ -72,14 +71,6 @@ export async function baseVacia(db: SQLiteDatabase): Promise<boolean> {
     'SELECT COUNT(*) AS n FROM transacciones'
   );
   return (p?.n ?? 0) === 0 && (t?.n ?? 0) === 0;
-}
-
-/** Hay cambios pendientes y nunca se respaldó o pasó más de un día. */
-export async function necesitaRespaldo(db: SQLiteDatabase): Promise<boolean> {
-  if ((await contarPendientes(db)) === 0) return false;
-  const ultimo = await getConfig(db, 'last_backup_at');
-  if (!ultimo) return true;
-  return Date.now() - new Date(ultimo).getTime() > UN_DIA_MS;
 }
 
 async function marcarSincronizado(

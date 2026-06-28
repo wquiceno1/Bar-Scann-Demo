@@ -8,7 +8,11 @@ import { colors } from '../theme/tokens';
 
 export default function RootLayout() {
   return (
-    <SQLiteProvider databaseName={DB_NAME} onInit={migrateDbIfNeeded}>
+    <SQLiteProvider
+      databaseName={DB_NAME}
+      onInit={migrateDbIfNeeded}
+      options={{ enableChangeListener: true }}
+    >
       <SyncManager />
       <RecuperarGate />
       <Stack
