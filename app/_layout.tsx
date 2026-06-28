@@ -1,12 +1,16 @@
 import { Stack } from 'expo-router';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
+import RecuperarGate from '../components/RecuperarGate';
+import SyncManager from '../components/SyncManager';
 import { DB_NAME, migrateDbIfNeeded } from '../db';
 import { colors } from '../theme/tokens';
 
 export default function RootLayout() {
   return (
     <SQLiteProvider databaseName={DB_NAME} onInit={migrateDbIfNeeded}>
+      <SyncManager />
+      <RecuperarGate />
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: colors.surface },

@@ -30,7 +30,10 @@
         }
       ],
       "expo-router",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-font"
     ]
   }
 }
