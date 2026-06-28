@@ -17,7 +17,12 @@ import {
   recordarHuella,
   usuarioActual,
 } from '../../lib/auth';
-import { estadoRespaldo, respaldar } from '../../lib/backup';
+import {
+  estadoRespaldo,
+  marcarTodoPendienteRespaldo,
+  respaldar,
+  vaciarRespaldoRemoto,
+} from '../../lib/backup';
 import { vaciarDatosLocales } from '../../db/mantenimiento';
 import { toast } from '../../lib/feedback';
 import { colors, font, spacing } from '../../theme/tokens';
@@ -51,11 +56,13 @@ export default function AjustesScreen() {
   const [password, setPassword] = useState('');
   const [cargando, setCargando] = useState(false);
   const [respaldando, setRespaldando] = useState(false);
+  const [reconstruyendo, setReconstruyendo] = useState(false);
   const [huellaDisp, setHuellaDisp] = useState(false);
   const [huellaConf, setHuellaConf] = useState(false);
   const [ultimo, setUltimo] = useState<string | null>(null);
   const [pendientes, setPendientes] = useState(0);
   const [vaciando, setVaciando] = useState(false);
+  const [vaciandoTodo, setVaciandoTodo] = useState(false);
   // Guarda la contraseña de la sesión actual para poder activar la huella
   // sin volver a pedirla. Se limpia al cerrar sesión.
   const pwRef = useRef<string | null>(null);
@@ -151,6 +158,36 @@ export default function AjustesScreen() {
     }
   };
 
+  const reconstruirRespaldo = () => {
+    Alert.alert(
+      'Reconstruir respaldo completo',
+      'Esto volvera a marcar todos los productos, transacciones e items locales como pendientes para subirlos otra vez a Firestore. Usalo solo si borraste colecciones en la nube por error.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Reconstruir',
+          onPress: async () => {
+            setReconstruyendo(true);
+            try {
+              const pendientesMarcados = await marcarTodoPendienteRespaldo(db);
+              const n = await respaldar(db);
+              await refrescar();
+              toast(
+                n > 0
+                  ? `Respaldo reconstruido (${n} registros; ${pendientesMarcados} marcados)`
+                  : 'No habia registros para reconstruir'
+              );
+            } catch (e) {
+              Alert.alert('No se pudo reconstruir', mensajeError(e));
+            } finally {
+              setReconstruyendo(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const activarHuella = async () => {
     if (!pwRef.current) {
       Alert.alert(
@@ -203,6 +240,38 @@ export default function AjustesScreen() {
     );
   };
 
+  const vaciarLocalYNube = () => {
+    Alert.alert(
+      'Vaciar telefono y nube',
+      'Esto borrara permanentemente los productos, movimientos y respaldo en Firestore. Primero se vaciara la nube y luego este telefono. No se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Vaciar todo',
+          style: 'destructive',
+          onPress: async () => {
+            setVaciandoTodo(true);
+            try {
+              const borradosRemotos = await vaciarRespaldoRemoto();
+              await vaciarDatosLocales(db);
+              await setConfig(db, 'last_backup_at', '');
+              await refrescar();
+              toast(
+                borradosRemotos > 0
+                  ? `Telefono y nube vaciados (${borradosRemotos} docs remotos)`
+                  : 'Telefono y nube vaciados'
+              );
+            } catch (e) {
+              Alert.alert('No se pudo vaciar todo', mensajeError(e));
+            } finally {
+              setVaciandoTodo(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Screen padded scroll>
       <Card style={{ gap: spacing.md }}>
@@ -238,6 +307,18 @@ export default function AjustesScreen() {
               icon="cloud-upload"
               loading={respaldando}
               onPress={respaldarAhora}
+            />
+            <Text style={styles.help}>
+              Si borraste una coleccion en Firestore por error, usa la
+              reconstruccion completa para volver a subir todo el respaldo desde
+              este telefono.
+            </Text>
+            <Button
+              label="Reconstruir respaldo completo"
+              icon="refresh-circle"
+              variant="secondary"
+              loading={reconstruyendo}
+              onPress={reconstruirRespaldo}
             />
             {huellaDisp &&
               (huellaConf ? (
@@ -318,6 +399,25 @@ export default function AjustesScreen() {
           loading={vaciando}
           onPress={vaciarBase}
         />
+        {usuario ? (
+          <>
+            <Text style={styles.help}>
+              Si quieres un reinicio total de pruebas, este boton borra tambien
+              el respaldo remoto de Firestore antes de vaciar el telefono.
+            </Text>
+            <Button
+              label="Vaciar telefono y nube"
+              icon="nuclear"
+              variant="danger"
+              loading={vaciandoTodo}
+              onPress={vaciarLocalYNube}
+            />
+          </>
+        ) : (
+          <Text style={styles.help}>
+            Inicia sesion para poder borrar tambien el respaldo remoto.
+          </Text>
+        )}
       </Card>
     </Screen>
   );

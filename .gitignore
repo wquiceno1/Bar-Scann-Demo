@@ -33,6 +33,7 @@ yarn-error.*
 # local env files
 .env
 .env*.local
+.trae-eas-home/
 
 # typescript
 *.tsbuildinfo

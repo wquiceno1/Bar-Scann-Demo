@@ -62,6 +62,58 @@ export async function estadoRespaldo(
   };
 }
 
+/**
+ * Fuerza un re-respaldo completo: vuelve a marcar productos, transacciones e
+ * items como pendientes para reconstruir Firestore desde la copia local.
+ */
+export function marcarTodoPendienteRespaldo(
+  db: SQLiteDatabase
+): Promise<number> {
+  return enSerie(async () => {
+    await db.withTransactionAsync(async () => {
+      for (const tabla of TABLAS_SYNC) {
+        await db.execAsync(`UPDATE ${tabla} SET synced = 0`);
+      }
+    });
+    return contarPendientes(db);
+  });
+}
+
+async function borrarColeccion(nombre: string): Promise<number> {
+  let borrados = 0;
+  const snap = await getDocs(collection(firestore, nombre));
+  const docs = snap.docs;
+
+  for (let i = 0; i < docs.length; i += LIMITE_LOTE) {
+    const lote = writeBatch(firestore);
+    for (const d of docs.slice(i, i + LIMITE_LOTE)) {
+      lote.delete(d.ref);
+      borrados++;
+    }
+    await lote.commit();
+  }
+
+  return borrados;
+}
+
+/**
+ * Borra por completo el respaldo remoto guardado en Firestore.
+ * OJO: en el esquema actual esto elimina todas las colecciones espejo del
+ * proyecto Firebase, por lo que debe usarse solo en entornos de un unico
+ * negocio/usuario.
+ */
+export function vaciarRespaldoRemoto(): Promise<number> {
+  return enSerie(async () => {
+    if (!usuarioActual()) throw new Error('Sesión no iniciada');
+
+    let borrados = 0;
+    for (const nombre of [...TABLAS_SYNC, 'configuracion']) {
+      borrados += await borrarColeccion(nombre);
+    }
+    return borrados;
+  });
+}
+
 /** La base local no tiene datos de negocio (teléfono nuevo / reinstalación). */
 export async function baseVacia(db: SQLiteDatabase): Promise<boolean> {
   const p = await db.getFirstAsync<{ n: number }>(
