@@ -2,9 +2,15 @@
 
 ## Estado actual
 
-✅ **Demo técnica completada** — lector de códigos de barras funcionando en Expo Go (SDK 54), consultando Open Food Facts y mostrando resultado + latencia en un modal. Ver detalle de esa fase en la sección [Demo técnica (completada)](#demo-técnica-completada).
+✅ **Sistema de inventario implementado** (Expo Go, SDK 54). Catálogo, operaciones compra/venta/ajuste con *snapshots* de costo/precio, stock incremental con inventario inicial trazado, productos a granel (código interno `INT-`), historial filtrable y reportes con gráficos. Sigue el diseño de esquema y pantallas de más abajo.
 
-🔜 **Próxima fase**: la demo cumplió su función (validar escaneo continuo + latencia de API), pero reveló que la API pública no cubre el catálogo real de la tienda. Se definió el concepto de un **sistema de inventario propio**, documentado abajo, listo para diseñar e implementar en una próxima sesión.
+✅ **Respaldo en Firebase implementado y probado** — espejo de una vía a Firestore + recuperación en equipo nuevo (base local vacía → baja el respaldo). Respaldo automático incremental ante cambios + botón manual. **Cambio respecto al plan original:** la autenticación **no** es anónima sino **email/clave (cuenta fija) + ingreso con huella local** en Android, por seguridad real de los datos de ventas. Credenciales por variables `EXPO_PUBLIC_*` (`.env`, fuera del repo; ver `.env.example`). Detalle y pendientes en [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
+
+✅ **Mejoras de UX**: mostrar/ocultar contraseña, manejo del teclado (el contenido sube y no tapa los inputs), y **costo unitario editable en compras** (actualiza el costo del producto y, si el precio es por margen, recalcula la venta). La línea de compra/venta muestra: nombre → precio/costo unitario → cantidad → total.
+
+🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen); y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
+
+> Historial: la demo técnica de escaneo (validación de cámara + latencia API) está en [Demo técnica (completada)](#demo-técnica-completada). El diseño detallado del sistema sigue vigente más abajo.
 
 ---
 
