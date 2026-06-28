@@ -2,11 +2,19 @@ import { Stack } from 'expo-router';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import { DB_NAME, migrateDbIfNeeded } from '../db';
+import { colors } from '../theme/tokens';
 
 export default function RootLayout() {
   return (
     <SQLiteProvider databaseName={DB_NAME} onInit={migrateDbIfNeeded}>
-      <Stack>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: colors.surface },
+          headerTitleStyle: { color: colors.text },
+          headerTintColor: colors.primary,
+          contentStyle: { backgroundColor: colors.bg },
+        }}
+      >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="transaccion/[tipo]"

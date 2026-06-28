@@ -1,21 +1,29 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import { EmptyState, Screen } from '../../components/ui';
 import { listarTransacciones } from '../../db/transacciones';
 import type { TipoTransaccion, Transaccion } from '../../db/types';
 import { formatCOP } from '../../db/util';
+import { colors, font, radius, shadow, spacing } from '../../theme/tokens';
 
-const TIPOS: (TipoTransaccion | 'todos')[] = [
-  'todos',
-  'venta',
-  'compra',
-  'ajuste',
-];
+const TIPOS: (TipoTransaccion | 'todos')[] = ['todos', 'venta', 'compra', 'ajuste'];
 const ETIQUETA: Record<TipoTransaccion, string> = {
   venta: 'Venta',
   compra: 'Compra',
   ajuste: 'Ajuste',
+};
+const ICONO: Record<TipoTransaccion, keyof typeof Ionicons.glyphMap> = {
+  venta: 'cart',
+  compra: 'cube',
+  ajuste: 'construct',
+};
+const COLOR: Record<TipoTransaccion, string> = {
+  venta: colors.venta,
+  compra: colors.compra,
+  ajuste: colors.ajuste,
 };
 
 export default function HistorialScreen() {
@@ -26,40 +34,54 @@ export default function HistorialScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      listarTransacciones(
-        db,
-        filtro === 'todos' ? {} : { tipo: filtro }
-      ).then(setItems);
+      listarTransacciones(db, filtro === 'todos' ? {} : { tipo: filtro }).then(
+        setItems
+      );
     }, [db, filtro])
   );
 
   return (
-    <View style={styles.container}>
+    <Screen padded>
       <View style={styles.filtros}>
-        {TIPOS.map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => setFiltro(t)}
-            style={[styles.chip, filtro === t && styles.chipOn]}
-          >
-            <Text style={[styles.chipText, filtro === t && styles.chipTextOn]}>
-              {t === 'todos' ? 'Todos' : ETIQUETA[t]}
-            </Text>
-          </Pressable>
-        ))}
+        {TIPOS.map((t) => {
+          const on = filtro === t;
+          return (
+            <Pressable
+              key={t}
+              onPress={() => setFiltro(t)}
+              style={[styles.chip, on && styles.chipOn]}
+            >
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                {t === 'todos' ? 'Todos' : ETIQUETA[t]}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
       <FlatList
         data={items}
         keyExtractor={(t) => t.id}
+        contentContainerStyle={{ gap: spacing.sm }}
         ListEmptyComponent={
-          <Text style={styles.empty}>Sin operaciones registradas.</Text>
+          <EmptyState
+            icon="time-outline"
+            title="Sin operaciones"
+            subtitle="Las ventas, compras y ajustes que registres aparecerán aquí."
+          />
         }
         renderItem={({ item }) => (
           <Pressable
-            style={styles.row}
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
             onPress={() => router.push(`/detalle/${item.id}`)}
           >
+            <View style={[styles.badge, { backgroundColor: COLOR[item.tipo] }]}>
+              <Ionicons
+                name={ICONO[item.tipo]}
+                size={18}
+                color={colors.textInverse}
+              />
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.tipo}>
                 {ETIQUETA[item.tipo]}
@@ -73,31 +95,41 @@ export default function HistorialScreen() {
           </Pressable>
         )}
       />
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 12 },
-  filtros: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  filtros: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#e5e7eb',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  chipOn: { backgroundColor: '#2563eb' },
-  chipText: { color: '#374151', fontWeight: '600', fontSize: 13 },
-  chipTextOn: { color: '#fff' },
-  empty: { textAlign: 'center', color: '#6b7280', marginTop: 40 },
+  chipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { color: colors.textMuted, fontWeight: '700', fontSize: font.sm },
+  chipTextOn: { color: colors.textInverse },
+  pressed: { opacity: 0.85 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...shadow,
   },
-  tipo: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  fecha: { fontSize: 12, color: '#6b7280', marginTop: 2 },
-  total: { fontSize: 15, fontWeight: '700', color: '#111827' },
+  badge: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipo: { fontSize: font.md, fontWeight: '700', color: colors.text },
+  fecha: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
+  total: { fontSize: font.md, fontWeight: '800', color: colors.text },
 });

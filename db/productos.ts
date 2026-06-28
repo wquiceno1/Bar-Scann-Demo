@@ -1,5 +1,6 @@
 import type { SQLiteBindValue, SQLiteDatabase } from 'expo-sqlite';
 import type { ModoPrecio, Producto } from './types';
+import { finalizarTransaccion } from './transacciones';
 import { nowIso } from './util';
 
 export async function getProducto(
@@ -50,11 +51,14 @@ export async function crearProducto(
   p: NuevoProducto
 ): Promise<void> {
   const ts = nowIso();
+  // Se crea con stock 0; el stock inicial se registra como un movimiento
+  // 'ajuste' (motivo 'inventario inicial') para que quede trazado y no
+  // "aparezca de la nada".
   await db.runAsync(
     `INSERT INTO productos
        (barcode, nombre, sin_codigo, categoria, modo_precio, costo, margen_pct,
         precio, stock_actual, activo, created_at, updated_at, synced)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?, 0)`,
     p.barcode,
     p.nombre,
     p.sin_codigo ? 1 : 0,
@@ -63,10 +67,25 @@ export async function crearProducto(
     p.costo ?? null,
     p.margen_pct ?? null,
     p.precio,
-    p.stock_inicial ?? 0,
     ts,
     ts
   );
+
+  if (p.stock_inicial && p.stock_inicial !== 0) {
+    await finalizarTransaccion(db, {
+      tipo: 'ajuste',
+      motivo: 'inventario inicial',
+      lineas: [
+        {
+          barcode: p.barcode,
+          nombre: p.nombre,
+          cantidad: p.stock_inicial,
+          costo_snapshot: p.costo ?? null,
+          precio_unitario_snapshot: 0,
+        },
+      ],
+    });
+  }
 }
 
 export type CamposEditables = Partial<

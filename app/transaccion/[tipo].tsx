@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import {
   Alert,
@@ -5,25 +6,29 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import {
-  Stack,
-  useLocalSearchParams,
-  useRouter,
-} from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import BuscadorProducto from '../../components/BuscadorProducto';
 import ScannerView from '../../components/ScannerView';
+import { Button, Input } from '../../components/ui';
 import { getProducto } from '../../db/productos';
 import { finalizarTransaccion } from '../../db/transacciones';
-import type { LineaBorrador, TipoTransaccion } from '../../db/types';
+import type { LineaBorrador, Producto, TipoTransaccion } from '../../db/types';
 import { formatCOP } from '../../db/util';
+import { toast } from '../../lib/feedback';
+import { colors, font, radius, shadow, spacing } from '../../theme/tokens';
 
 const TITULOS: Record<TipoTransaccion, string> = {
   venta: 'Nueva venta',
   compra: 'Nueva compra',
   ajuste: 'Ajuste de inventario',
+};
+const ACCENTO: Record<TipoTransaccion, string> = {
+  venta: colors.venta,
+  compra: colors.compra,
+  ajuste: colors.ajuste,
 };
 
 function esTipo(v: string): v is TipoTransaccion {
@@ -39,30 +44,16 @@ export default function TransaccionScreen() {
   const [lineas, setLineas] = useState<LineaBorrador[]>([]);
   const [contraparte, setContraparte] = useState('');
   const [guardando, setGuardando] = useState(false);
+  const [buscadorVisible, setBuscadorVisible] = useState(false);
 
   const total = lineas.reduce(
     (acc, l) => acc + l.cantidad * l.precio_unitario_snapshot,
     0
   );
 
-  const agregarPorCodigo = useCallback(
-    async (code: string) => {
-      const prod = await getProducto(db, code);
-      if (!prod) {
-        Alert.alert(
-          'Producto no encontrado',
-          `El código ${code} no está en el catálogo.`,
-          [
-            { text: 'Cancelar', style: 'cancel' },
-            {
-              text: 'Crear producto',
-              onPress: () => router.push(`/producto/nuevo?barcode=${code}`),
-            },
-          ]
-        );
-        return;
-      }
-
+  // Agrega/incrementa la línea de un producto (compartido por escaneo y buscador).
+  const agregarProducto = useCallback(
+    (prod: Producto) => {
       const precioUnit =
         tipo === 'venta'
           ? prod.precio
@@ -89,7 +80,29 @@ export default function TransaccionScreen() {
         ];
       });
     },
-    [db, router, tipo]
+    [tipo]
+  );
+
+  const agregarPorCodigo = useCallback(
+    async (code: string) => {
+      const prod = await getProducto(db, code);
+      if (!prod) {
+        Alert.alert(
+          'Producto no encontrado',
+          `El código ${code} no está en el catálogo.`,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Crear producto',
+              onPress: () => router.push(`/producto/nuevo?barcode=${code}`),
+            },
+          ]
+        );
+        return;
+      }
+      agregarProducto(prod);
+    },
+    [db, router, agregarProducto]
   );
 
   const cambiarCantidad = (barcode: string, delta: number) => {
@@ -98,7 +111,6 @@ export default function TransaccionScreen() {
         .map((l) =>
           l.barcode === barcode ? { ...l, cantidad: l.cantidad + delta } : l
         )
-        // en ajuste la cantidad puede ser negativa; solo se elimina si llega a 0
         .filter((l) => l.cantidad !== 0)
     );
   };
@@ -116,6 +128,7 @@ export default function TransaccionScreen() {
         motivo: tipo === 'ajuste' ? contraparte.trim() || null : null,
         lineas,
       });
+      toast(TITULOS[tipo] + ' guardada');
       router.back();
     } catch (e) {
       setGuardando(false);
@@ -128,17 +141,48 @@ export default function TransaccionScreen() {
       <Stack.Screen options={{ title: TITULOS[tipo] }} />
 
       <View style={styles.scanner}>
-        <ScannerView onScan={agregarPorCodigo} paused={guardando} />
+        <ScannerView
+          onScan={agregarPorCodigo}
+          paused={guardando || buscadorVisible}
+        />
+        <View style={styles.scanHint}>
+          <Ionicons name="scan-outline" size={16} color={colors.textInverse} />
+          <Text style={styles.scanHintText}>Apunta al código de barras</Text>
+        </View>
       </View>
+
+      <Pressable
+        onPress={() => setBuscadorVisible(true)}
+        style={({ pressed }) => [styles.sinEscanear, pressed && styles.pressed]}
+      >
+        <Ionicons name="search" size={18} color={colors.primary} />
+        <Text style={styles.sinEscanearText}>
+          Agregar sin escanear (granel / por nombre)
+        </Text>
+      </Pressable>
+
+      <BuscadorProducto
+        visible={buscadorVisible}
+        onClose={() => setBuscadorVisible(false)}
+        onSelect={agregarProducto}
+      />
 
       <FlatList
         style={styles.lista}
+        contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm }}
         data={lineas}
         keyExtractor={(l) => l.barcode}
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            Escanea un producto para agregarlo.
-          </Text>
+          <View style={styles.empty}>
+            <Ionicons
+              name="barcode-outline"
+              size={40}
+              color={colors.textMuted}
+            />
+            <Text style={styles.emptyText}>
+              Escanea un producto para agregarlo.
+            </Text>
+          </View>
         }
         renderItem={({ item }) => (
           <View style={styles.linea}>
@@ -152,14 +196,14 @@ export default function TransaccionScreen() {
               style={styles.qtyBtn}
               onPress={() => cambiarCantidad(item.barcode, -1)}
             >
-              <Text style={styles.qtyBtnText}>−</Text>
+              <Ionicons name="remove" size={18} color={colors.text} />
             </Pressable>
             <Text style={styles.qty}>{item.cantidad}</Text>
             <Pressable
               style={styles.qtyBtn}
               onPress={() => cambiarCantidad(item.barcode, 1)}
             >
-              <Text style={styles.qtyBtnText}>+</Text>
+              <Ionicons name="add" size={18} color={colors.text} />
             </Pressable>
             <Text style={styles.subtotal}>
               {formatCOP(item.cantidad * item.precio_unitario_snapshot)}
@@ -169,8 +213,7 @@ export default function TransaccionScreen() {
       />
 
       <View style={styles.footer}>
-        <TextInput
-          style={styles.input}
+        <Input
           placeholder={
             tipo === 'venta'
               ? 'Cliente (opcional)'
@@ -182,75 +225,98 @@ export default function TransaccionScreen() {
           onChangeText={setContraparte}
         />
         {tipo !== 'ajuste' && (
-          <Text style={styles.total}>Total: {formatCOP(total)}</Text>
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={[styles.totalValue, { color: ACCENTO[tipo] }]}>
+              {formatCOP(total)}
+            </Text>
+          </View>
         )}
-        <Pressable
-          style={[styles.finalizar, guardando && styles.finalizarOff]}
+        <Button
+          label="Finalizar"
+          icon="checkmark-circle"
+          variant={tipo}
+          size="lg"
+          loading={guardando}
           onPress={finalizar}
-          disabled={guardando}
-        >
-          <Text style={styles.finalizarText}>
-            {guardando ? 'Guardando…' : 'Finalizar'}
-          </Text>
-        </Pressable>
+        />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: colors.bg },
+  pressed: { opacity: 0.85 },
   scanner: { height: 220, backgroundColor: '#000' },
-  lista: { flex: 1, paddingHorizontal: 12 },
-  empty: { textAlign: 'center', color: '#6b7280', marginTop: 24 },
+  sinEscanear: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  sinEscanearText: { color: colors.primary, fontSize: font.md, fontWeight: '700' },
+  scanHint: {
+    position: 'absolute',
+    bottom: spacing.md,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.overlay,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+  },
+  scanHintText: { color: colors.textInverse, fontSize: font.xs },
+  lista: { flex: 1 },
+  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
+  emptyText: { color: colors.textMuted, fontSize: font.md },
   linea: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    gap: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    ...shadow,
   },
-  lineaNombre: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  lineaMeta: { fontSize: 12, color: '#6b7280' },
+  lineaNombre: { fontSize: font.md, fontWeight: '700', color: colors.text },
+  lineaMeta: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
   qtyBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#e5e7eb',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qtyBtnText: { fontSize: 20, fontWeight: '700', color: '#374151' },
-  qty: { minWidth: 28, textAlign: 'center', fontSize: 16, fontWeight: '600' },
+  qty: { minWidth: 28, textAlign: 'center', fontSize: font.lg, fontWeight: '700' },
   subtotal: {
-    minWidth: 80,
+    minWidth: 84,
     textAlign: 'right',
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: font.md,
+    fontWeight: '800',
+    color: colors.text,
   },
   footer: {
-    padding: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e5e7eb',
-    gap: 8,
+    padding: spacing.lg,
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
   },
-  total: { fontSize: 20, fontWeight: '800', color: '#111827', textAlign: 'right' },
-  finalizar: {
-    backgroundColor: '#16a34a',
-    borderRadius: 10,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  finalizarOff: { backgroundColor: '#9ca3af' },
-  finalizarText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  totalLabel: { fontSize: font.md, color: colors.textMuted, fontWeight: '600' },
+  totalValue: { fontSize: font.xxl, fontWeight: '800' },
 });

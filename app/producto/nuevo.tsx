@@ -1,22 +1,22 @@
-import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import {
-  getMargenGeneral,
-  nextCodigoInterno,
-} from '../../db/configuracion';
+import { Button, Input, Screen } from '../../components/ui';
+import { getMargenGeneral, nextCodigoInterno } from '../../db/configuracion';
 import { crearProducto, getProducto } from '../../db/productos';
 import type { ModoPrecio } from '../../db/types';
 import { precioConMargen } from '../../db/util';
+import { toast } from '../../lib/feedback';
+import { colors, font, radius, spacing } from '../../theme/tokens';
 
 export default function NuevoProductoScreen() {
   const db = useSQLiteContext();
@@ -31,13 +31,20 @@ export default function NuevoProductoScreen() {
   const [margen, setMargen] = useState('');
   const [precio, setPrecio] = useState('');
   const [stockInicial, setStockInicial] = useState('0');
+  const [margenGeneral, setMargenGeneral] = useState<number | null>(null);
+
+  useEffect(() => {
+    getMargenGeneral(db).then(setMargenGeneral);
+  }, [db]);
+
+  const margenEfectivo = margen.trim() !== '' ? Number(margen) : margenGeneral;
 
   const precioSugerido = (() => {
     if (modoPrecio !== 'margen') return null;
     const c = Number(costo);
-    const m = Number(margen);
-    if (!Number.isFinite(c) || c <= 0 || !Number.isFinite(m)) return null;
-    return precioConMargen(c, m);
+    if (!Number.isFinite(c) || c <= 0) return null;
+    if (margenEfectivo == null || !Number.isFinite(margenEfectivo)) return null;
+    return precioConMargen(c, margenEfectivo);
   })();
 
   const guardar = async () => {
@@ -79,104 +86,107 @@ export default function NuevoProductoScreen() {
       costo: costoNum,
       margen_pct: margen ? Number(margen) : null,
       precio: precioFinal,
-      // TODO: registrar el stock inicial como transacción 'ajuste'
-      // (motivo: 'inventario inicial') para trazabilidad, según el diseño.
+      // crearProducto registra esto como un 'ajuste' (motivo 'inventario
+      // inicial') para que el stock de arranque quede trazado.
       stock_inicial: Number(stockInicial) || 0,
     });
+    toast(`Producto guardado: ${nombre.trim()}`);
     router.back();
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ gap: 12 }}>
-      <Field label="Código de barras">
-        <Text style={styles.codigo}>
-          {barcode || (sinCodigo ? '(se generará INT-… )' : '—')}
-        </Text>
-      </Field>
-
-      <Toggle
-        label="Producto a granel / sin código"
-        value={sinCodigo}
-        onChange={setSinCodigo}
-      />
-
-      <Field label="Nombre">
-        <TextInput style={styles.input} value={nombre} onChangeText={setNombre} />
-      </Field>
-
-      <Field label="Modo de precio">
-        <View style={styles.row}>
-          <Seg
-            on={modoPrecio === 'margen'}
-            label="Calcular con margen"
-            onPress={() => setModoPrecio('margen')}
-          />
-          <Seg
-            on={modoPrecio === 'fijo'}
-            label="Precio fijo"
-            onPress={() => setModoPrecio('fijo')}
-          />
+    <Screen>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.codigoBox}>
+          <Ionicons name="barcode-outline" size={20} color={colors.textMuted} />
+          <Text style={styles.codigo}>
+            {barcode || (sinCodigo ? 'Se generará un código INT-…' : '—')}
+          </Text>
         </View>
-      </Field>
 
-      <Field label="Costo (COP)">
-        <TextInput
-          style={styles.input}
+        <Toggle
+          label="Producto a granel / sin código"
+          value={sinCodigo}
+          onChange={setSinCodigo}
+        />
+
+        <Input label="Nombre" value={nombre} onChangeText={setNombre} />
+
+        <View>
+          <Text style={styles.label}>Modo de precio</Text>
+          <View style={styles.row}>
+            <Seg
+              on={modoPrecio === 'margen'}
+              label="Calcular con margen"
+              onPress={() => setModoPrecio('margen')}
+            />
+            <Seg
+              on={modoPrecio === 'fijo'}
+              label="Precio fijo"
+              onPress={() => setModoPrecio('fijo')}
+            />
+          </View>
+        </View>
+
+        <Input
+          label="Costo (COP)"
           keyboardType="numeric"
           value={costo}
           onChangeText={setCosto}
         />
-      </Field>
 
-      {modoPrecio === 'margen' ? (
-        <>
-          <Field label="Margen % (vacío = general)">
-            <TextInput
-              style={styles.input}
+        {modoPrecio === 'margen' ? (
+          <>
+            <Input
+              label="Margen del producto %"
+              hint={
+                margenGeneral != null
+                  ? `Opcional. Si lo dejas vacío usa el margen general (${margenGeneral}%).`
+                  : 'Opcional.'
+              }
               keyboardType="numeric"
+              placeholder={
+                margenGeneral != null ? `${margenGeneral} (general)` : ''
+              }
               value={margen}
               onChangeText={setMargen}
             />
-          </Field>
-          {precioSugerido != null && (
-            <Text style={styles.sugerido}>
-              Precio sugerido: ${precioSugerido.toLocaleString('es-CO')}
-            </Text>
-          )}
-        </>
-      ) : (
-        <Field label="Precio de venta (COP)">
-          <TextInput
-            style={styles.input}
+            {precioSugerido != null && (
+              <View style={styles.sugeridoBox}>
+                <Ionicons name="pricetag" size={16} color={colors.venta} />
+                <Text style={styles.sugerido}>
+                  Precio sugerido: ${precioSugerido.toLocaleString('es-CO')}
+                  {margen.trim() === '' ? '  · margen general' : ''}
+                </Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <Input
+            label="Precio de venta (COP)"
             keyboardType="numeric"
             value={precio}
             onChangeText={setPrecio}
           />
-        </Field>
-      )}
+        )}
 
-      <Field label="Stock inicial">
-        <TextInput
-          style={styles.input}
+        <Input
+          label="Stock inicial"
           keyboardType="numeric"
           value={stockInicial}
           onChangeText={setStockInicial}
         />
-      </Field>
 
-      <Pressable style={styles.btn} onPress={guardar}>
-        <Text style={styles.btnText}>Guardar producto</Text>
-      </Pressable>
-    </ScrollView>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <View>
-      <Text style={styles.label}>{label}</Text>
-      {children}
-    </View>
+        <Button
+          label="Guardar producto"
+          icon="save"
+          variant="venta"
+          size="lg"
+          onPress={guardar}
+          style={{ marginTop: spacing.sm }}
+        />
+      </ScrollView>
+    </Screen>
   );
 }
 
@@ -192,7 +202,7 @@ function Toggle({
   return (
     <Pressable style={styles.toggle} onPress={() => onChange(!value)}>
       <View style={[styles.checkbox, value && styles.checkboxOn]}>
-        {value && <Text style={styles.check}>✓</Text>}
+        {value && <Ionicons name="checkmark" size={16} color={colors.textInverse} />}
       </View>
       <Text style={styles.toggleLabel}>{label}</Text>
     </Pressable>
@@ -216,48 +226,47 @@ function Seg({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
-  label: { fontSize: 13, fontWeight: '700', color: '#6b7280', marginBottom: 4 },
-  codigo: { fontSize: 16, color: '#111827' },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
+  content: { padding: spacing.lg, gap: spacing.lg },
+  codigoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    padding: spacing.md,
   },
-  row: { flexDirection: 'row', gap: 8 },
+  codigo: { fontSize: font.md, color: colors.text },
+  label: {
+    fontSize: font.sm,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  row: { flexDirection: 'row', gap: spacing.sm },
   seg: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#e5e7eb',
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
   },
-  segOn: { backgroundColor: '#2563eb' },
-  segText: { color: '#374151', fontWeight: '600' },
-  segTextOn: { color: '#fff' },
-  sugerido: { fontSize: 15, color: '#16a34a', fontWeight: '700' },
-  toggle: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  segOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  segText: { color: colors.textMuted, fontWeight: '700' },
+  segTextOn: { color: colors.textInverse },
+  sugeridoBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  sugerido: { fontSize: font.md, color: colors.venta, fontWeight: '700' },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
+    width: 26,
+    height: 26,
+    borderRadius: radius.sm,
     borderWidth: 2,
-    borderColor: '#9ca3af',
+    borderColor: colors.textMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxOn: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  check: { color: '#fff', fontWeight: '700' },
-  toggleLabel: { fontSize: 15, color: '#111827' },
-  btn: {
-    backgroundColor: '#16a34a',
-    borderRadius: 10,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  btnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  toggleLabel: { fontSize: font.md, color: colors.text, flex: 1 },
 });

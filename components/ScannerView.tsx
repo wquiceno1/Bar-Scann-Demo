@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   CameraView,
   useCameraPermissions,
   type BarcodeScanningResult,
 } from 'expo-camera';
+import { useFocusEffect } from 'expo-router';
 
 const BARCODE_TYPES = ['ean13', 'ean8', 'upc_a', 'upc_e'] as const;
 
@@ -23,6 +24,16 @@ type Props = {
 export default function ScannerView({ onScan, paused = false }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [cooldown, setCooldown] = useState(false);
+  // La cámara se monta solo cuando la pantalla está enfocada. Al navegar a otra
+  // pantalla y volver, esto fuerza un remount limpio: sin esto la CameraView
+  // se queda en negro al regresar.
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, [])
+  );
 
   if (!permission) {
     return <View style={styles.fill} />;
@@ -48,6 +59,10 @@ export default function ScannerView({ onScan, paused = false }: Props) {
     onScan(data);
     setTimeout(() => setCooldown(false), 800);
   };
+
+  if (!focused) {
+    return <View style={styles.fill} />;
+  }
 
   const active = !paused && !cooldown;
 

@@ -2,9 +2,17 @@ import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import { Card, Screen } from '../../components/ui';
 import { getTransaccion } from '../../db/transacciones';
 import type { Transaccion, TransaccionItem } from '../../db/types';
 import { formatCOP } from '../../db/util';
+import { colors, font, spacing } from '../../theme/tokens';
+
+const ETIQUETA: Record<Transaccion['tipo'], string> = {
+  venta: 'Venta',
+  compra: 'Compra',
+  ajuste: 'Ajuste',
+};
 
 export default function DetalleScreen() {
   const db = useSQLiteContext();
@@ -25,61 +33,69 @@ export default function DetalleScreen() {
 
   if (!tx) {
     return (
-      <View style={styles.container}>
+      <Screen padded>
         <Text style={styles.meta}>Operación no encontrada.</Text>
-      </View>
+      </Screen>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.tipo}>{tx.tipo.toUpperCase()}</Text>
+    <Screen padded>
+      <Text style={styles.tipo}>{ETIQUETA[tx.tipo]}</Text>
       <Text style={styles.meta}>{tx.fecha_hora.replace('T', ' ')}</Text>
       {tx.cliente_proveedor ? (
         <Text style={styles.meta}>{tx.cliente_proveedor}</Text>
       ) : null}
       {tx.motivo ? <Text style={styles.meta}>Motivo: {tx.motivo}</Text> : null}
 
-      <FlatList
-        style={{ marginTop: 12 }}
-        data={items}
-        keyExtractor={(i) => i.id}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Text style={styles.nombre}>{item.nombre_snapshot}</Text>
-            <Text style={styles.cant}>×{item.cantidad}</Text>
-            <Text style={styles.sub}>{formatCOP(item.subtotal)}</Text>
-          </View>
-        )}
-      />
+      <Card flat style={styles.list}>
+        <FlatList
+          data={items}
+          keyExtractor={(i) => i.id}
+          scrollEnabled={false}
+          ItemSeparatorComponent={() => <View style={styles.sep} />}
+          renderItem={({ item }) => (
+            <View style={styles.row}>
+              <Text style={styles.nombre}>{item.nombre_snapshot}</Text>
+              <Text style={styles.cant}>×{item.cantidad}</Text>
+              <Text style={styles.sub}>{formatCOP(item.subtotal)}</Text>
+            </View>
+          )}
+        />
+      </Card>
 
       {tx.tipo !== 'ajuste' && (
         <Text style={styles.total}>Total: {formatCOP(tx.total)}</Text>
       )}
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
-  tipo: { fontSize: 22, fontWeight: '800', color: '#111827' },
-  meta: { fontSize: 14, color: '#6b7280', marginTop: 2 },
+  tipo: { fontSize: font.xxl, fontWeight: '800', color: colors.text },
+  meta: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
+  list: { marginTop: spacing.lg, padding: spacing.md },
+  sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-    gap: 8,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
-  nombre: { flex: 1, fontSize: 15, color: '#111827' },
-  cant: { fontSize: 14, color: '#6b7280' },
-  sub: { fontSize: 15, fontWeight: '700', minWidth: 80, textAlign: 'right' },
-  total: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#111827',
+  nombre: { flex: 1, fontSize: font.md, color: colors.text },
+  cant: { fontSize: font.sm, color: colors.textMuted },
+  sub: {
+    fontSize: font.md,
+    fontWeight: '700',
+    color: colors.text,
+    minWidth: 80,
     textAlign: 'right',
-    marginTop: 12,
+  },
+  total: {
+    fontSize: font.xl,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'right',
+    marginTop: spacing.lg,
   },
 });
