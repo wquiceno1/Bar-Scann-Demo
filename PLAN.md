@@ -8,9 +8,47 @@
 
 ✅ **Mejoras de UX**: mostrar/ocultar contraseña, manejo del teclado (el contenido sube y no tapa los inputs), y **costo unitario editable en compras** (actualiza el costo del producto y, si el precio es por margen, recalcula la venta). La línea de compra/venta muestra: nombre → precio/costo unitario → cantidad → total.
 
+✅ **Build Android para prueba en campo listo**: se configuró **EAS Build** para generar **APK instalable** con perfil `preview`, `android.package = com.barscandemo.app`, `versionCode = 1`, `eas.json` con perfiles `preview` (APK) y `production` (AAB), y scripts `build:android:apk` / `build:android:aab` en `package.json`. El proyecto quedó vinculado a EAS con `owner = wquicenos-team` + `extra.eas.projectId` en `app.json`. Las variables `EXPO_PUBLIC_FIREBASE_*` para builds remotos se cargan en EAS (`preview` / `production`), no desde el `.env` local.
+
+✅ **Prueba en campo realizada con éxito** usando APK instalado en dispositivo Android. La app respondió bien en operación real; quedaron comentarios y ajustes menores para una iteración posterior.
+
 🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen); y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
 
 > Historial: la demo técnica de escaneo (validación de cámara + latencia API) está en [Demo técnica (completada)](#demo-técnica-completada). El diseño detallado del sistema sigue vigente más abajo.
+
+---
+
+## Build Android / APK
+
+### Configuración aplicada
+- Se adoptó **EAS Build** para distribuir una app instalable fuera de Expo Go.
+- `app.json` quedó con `android.package = com.barscandemo.app` y `android.versionCode = 1`.
+- `eas.json` define:
+  - `preview` → `distribution = internal` + `android.buildType = apk`
+  - `production` → `android.buildType = app-bundle`
+- `package.json` expone:
+  - `npm run build:android:apk`
+  - `npm run build:android:aab`
+- `eas init` vinculó el proyecto a Expo/EAS y añadió `owner` + `extra.eas.projectId` en `app.json`.
+
+### Variables de entorno para EAS
+- El `.env` local sigue siendo válido para desarrollo local.
+- **Los builds remotos no leen automáticamente el `.env` local**.
+- Para compilar APK/AAB, las variables `EXPO_PUBLIC_FIREBASE_*` deben existir en EAS para el entorno correspondiente:
+  - `preview` para `build:android:apk`
+  - `production` para `build:android:aab`
+- En este proyecto se confirmó que las variables cargadas en EAS llegan correctamente al entorno `preview`.
+
+### Flujo operativo
+1. `npx eas-cli@latest login`
+2. `npx eas-cli@latest init` (ya realizado)
+3. Cargar / verificar `EXPO_PUBLIC_FIREBASE_*` en EAS
+4. `npm run build:android:apk`
+5. Descargar el APK desde el enlace de EAS e instalarlo en el teléfono
+
+### Resultado
+- La compilación para Android quedó lista como parte formal del proyecto.
+- La primera prueba en campo se hizo con APK instalado y fue satisfactoria.
 
 ---
 

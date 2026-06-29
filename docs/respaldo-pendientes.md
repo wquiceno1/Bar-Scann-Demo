@@ -51,9 +51,16 @@ anotado para cerrar el espejo al 100%.
 
 ## Notas para más adelante (no urgentes)
 
-- **EAS build:** las credenciales `EXPO_PUBLIC_FIREBASE_*` viven en `.env`
-  (ignorado por git). Para un build con EAS hay que cargarlas como EAS Secrets
-  o en `eas.json`; no se suben con el repo. Ver `.env.example`.
+- **EAS build / APK:** el proyecto ya quedó configurado para compilar Android
+  con `eas.json` (`preview` = APK, `production` = AAB) y el proyecto EAS quedó
+  vinculado en `app.json` con `owner` + `extra.eas.projectId`.
+- **Variables Firebase en builds remotos:** las credenciales
+  `EXPO_PUBLIC_FIREBASE_*` viven en `.env` para desarrollo local, pero para EAS
+  deben cargarse en los entornos de Expo (`preview` / `production`) a nivel de
+  proyecto o cuenta. No se suben con el repo. Ver `.env.example`.
+- **Prueba en campo:** el APK Android se generó e instaló correctamente, y la
+  prueba de campo fue satisfactoria. Los ajustes funcionales que salieron de
+  esa prueba se atenderán en una iteración posterior.
 - **Borrados no se espejan:** el modelo es de una vía e incremental. Los
   productos usan borrado lógico (`activo=0`), que sí se sincroniza. No hay
   borrado físico de transacciones en la app, así que no aplica hoy; si algún
