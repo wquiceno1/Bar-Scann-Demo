@@ -15,22 +15,50 @@ export async function getProducto(
   );
 }
 
+export type OrdenProducto = 'nombre' | 'stock' | 'precio';
+export type DireccionOrden = 'asc' | 'desc';
+
+/** Umbral (unidades) a partir del cual un producto se considera "stock bajo". */
+export const UMBRAL_STOCK_BAJO = 5;
+
+export type OpcionesListado = {
+  orden?: OrdenProducto;
+  dir?: DireccionOrden;
+  soloStockBajo?: boolean;
+};
+
 export async function listarProductos(
   db: SQLiteDatabase,
-  busqueda?: string
+  busqueda?: string,
+  opciones: OpcionesListado = {}
 ): Promise<Producto[]> {
+  const { orden = 'nombre', dir = 'asc', soloStockBajo = false } = opciones;
+
+  const where: string[] = ['activo = 1'];
+  const params: SQLiteBindValue[] = [];
+
   if (busqueda && busqueda.trim().length > 0) {
     const q = `%${busqueda.trim()}%`;
-    return db.getAllAsync<Producto>(
-      `SELECT * FROM productos
-         WHERE activo = 1 AND (nombre LIKE ? OR barcode LIKE ?)
-         ORDER BY nombre`,
-      q,
-      q
-    );
+    where.push('(nombre LIKE ? OR barcode LIKE ?)');
+    params.push(q, q);
   }
+  if (soloStockBajo) {
+    where.push('stock_actual <= ?');
+    params.push(UMBRAL_STOCK_BAJO);
+  }
+
+  // Dirección y columna salen de listas blancas (nunca de texto del usuario).
+  const dirSql = dir === 'desc' ? 'DESC' : 'ASC';
+  const orderBy =
+    orden === 'stock'
+      ? `stock_actual ${dirSql}, nombre COLLATE NOCASE ASC`
+      : orden === 'precio'
+        ? `precio ${dirSql}, nombre COLLATE NOCASE ASC`
+        : `nombre COLLATE NOCASE ${dirSql}`;
+
   return db.getAllAsync<Producto>(
-    'SELECT * FROM productos WHERE activo = 1 ORDER BY nombre'
+    `SELECT * FROM productos WHERE ${where.join(' AND ')} ORDER BY ${orderBy}`,
+    ...params
   );
 }
 

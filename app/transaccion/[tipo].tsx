@@ -47,6 +47,9 @@ export default function TransaccionScreen() {
   const [contraparte, setContraparte] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [buscadorVisible, setBuscadorVisible] = useState(false);
+  // Texto crudo del input de cantidad en 'ajuste' mientras se escribe (permite
+  // estados intermedios como "-" sin perderlos). Override efímero del número.
+  const [cantTexto, setCantTexto] = useState<Record<string, string>>({});
 
   const total = lineas.reduce(
     (acc, l) => acc + l.cantidad * l.precio_unitario_snapshot,
@@ -63,6 +66,13 @@ export default function TransaccionScreen() {
             ? (prod.costo ?? 0)
             : 0;
 
+      // El número manda: al escanear se descarta el override de texto.
+      setCantTexto((t) => {
+        const copia = { ...t };
+        delete copia[prod.barcode];
+        return copia;
+      });
+
       setLineas((prev) => {
         const idx = prev.findIndex((l) => l.barcode === prod.barcode);
         if (idx >= 0) {
@@ -75,9 +85,11 @@ export default function TransaccionScreen() {
           {
             barcode: prod.barcode,
             nombre: prod.nombre,
-            cantidad: 1,
+            // En ajuste se arranca en 0 (delta a escribir); en venta/compra en 1.
+            cantidad: tipo === 'ajuste' ? 0 : 1,
             costo_snapshot: prod.costo,
             precio_unitario_snapshot: precioUnit,
+            stock_actual: prod.stock_actual,
           },
         ];
       });
@@ -117,6 +129,52 @@ export default function TransaccionScreen() {
     );
   };
 
+  const limpiarTexto = (barcode: string) =>
+    setCantTexto((t) => {
+      const copia = { ...t };
+      delete copia[barcode];
+      return copia;
+    });
+
+  // Ajuste: −/+ no eliminan la línea al llegar a 0 (0 es un delta válido en
+  // construcción; la línea se quita solo con la papelera o al finalizar).
+  const cambiarCantidadAjuste = (barcode: string, delta: number) => {
+    limpiarTexto(barcode);
+    setLineas((prev) =>
+      prev.map((l) =>
+        l.barcode === barcode ? { ...l, cantidad: l.cantidad + delta } : l
+      )
+    );
+  };
+
+  // Ajuste: edición directa del delta, admitiendo un signo negativo inicial.
+  const cambiarCantidadTexto = (barcode: string, texto: string) => {
+    let limpio = texto.replace(/[^\d-]/g, '');
+    const negativo = limpio.startsWith('-');
+    limpio = limpio.replace(/-/g, '');
+    if (negativo) limpio = '-' + limpio;
+    setCantTexto((t) => ({ ...t, [barcode]: limpio }));
+    const n = limpio === '' || limpio === '-' ? 0 : parseInt(limpio, 10) || 0;
+    setLineas((prev) =>
+      prev.map((l) => (l.barcode === barcode ? { ...l, cantidad: n } : l))
+    );
+  };
+
+  // Ajuste: invierte el signo (vía garantizada para negativos en Android).
+  const invertirSigno = (barcode: string) => {
+    limpiarTexto(barcode);
+    setLineas((prev) =>
+      prev.map((l) =>
+        l.barcode === barcode ? { ...l, cantidad: -l.cantidad } : l
+      )
+    );
+  };
+
+  const quitarLinea = (barcode: string) => {
+    limpiarTexto(barcode);
+    setLineas((prev) => prev.filter((l) => l.barcode !== barcode));
+  };
+
   // En compras: editar el costo unitario que cobró el proveedor.
   const cambiarCosto = (barcode: string, texto: string) => {
     const n = Number(texto.replace(/[^\d]/g, '')) || 0;
@@ -130,8 +188,16 @@ export default function TransaccionScreen() {
   };
 
   const finalizar = async () => {
-    if (lineas.length === 0) {
-      Alert.alert('Sin productos', 'Agrega al menos un producto.');
+    // En ajuste se ignoran las líneas con delta 0 (sin cambio de stock).
+    const lineasValidas =
+      tipo === 'ajuste' ? lineas.filter((l) => l.cantidad !== 0) : lineas;
+    if (lineasValidas.length === 0) {
+      Alert.alert(
+        'Sin cambios',
+        tipo === 'ajuste'
+          ? 'No hay ajustes que guardar.'
+          : 'Agrega al menos un producto.'
+      );
       return;
     }
     setGuardando(true);
@@ -140,7 +206,7 @@ export default function TransaccionScreen() {
         tipo,
         cliente_proveedor: contraparte.trim() || null,
         motivo: tipo === 'ajuste' ? contraparte.trim() || null : null,
-        lineas,
+        lineas: lineasValidas,
       });
       toast(TITULOS[tipo] + ' guardada');
       router.back();
@@ -198,35 +264,106 @@ export default function TransaccionScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
+        renderItem={({ item }) => {
+          if (tipo === 'ajuste') {
+            const stockActual = item.stock_actual ?? 0;
+            const resultante = stockActual + item.cantidad;
+            const display =
+              cantTexto[item.barcode] !== undefined
+                ? cantTexto[item.barcode]
+                : String(item.cantidad);
+            return (
+              <View style={styles.linea}>
+                <View style={styles.lineaHeader}>
+                  <Text style={[styles.lineaNombre, styles.flex1]}>
+                    {item.nombre}
+                  </Text>
+                  <Pressable onPress={() => quitarLinea(item.barcode)} hitSlop={8}>
+                    <Ionicons
+                      name="trash-outline"
+                      size={20}
+                      color={colors.textMuted}
+                    />
+                  </Pressable>
+                </View>
+                <Text style={styles.stockActual}>
+                  Stock actual: <Text style={styles.stockActualNum}>{stockActual}</Text>
+                </Text>
+                <View style={styles.ajusteControls}>
+                  <Pressable
+                    style={styles.qtyBtn}
+                    onPress={() => cambiarCantidadAjuste(item.barcode, -1)}
+                  >
+                    <Ionicons name="remove" size={18} color={colors.text} />
+                  </Pressable>
+                  <TextInput
+                    style={styles.ajusteInput}
+                    keyboardType="numeric"
+                    selectTextOnFocus
+                    value={display}
+                    onChangeText={(t) => cambiarCantidadTexto(item.barcode, t)}
+                    placeholder="0"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                  <Pressable
+                    style={styles.qtyBtn}
+                    onPress={() => cambiarCantidadAjuste(item.barcode, 1)}
+                  >
+                    <Ionicons name="add" size={18} color={colors.text} />
+                  </Pressable>
+                  <Pressable
+                    style={styles.signBtn}
+                    onPress={() => invertirSigno(item.barcode)}
+                  >
+                    <Text style={styles.signBtnText}>±</Text>
+                  </Pressable>
+                </View>
+                <Text
+                  style={[
+                    styles.resultante,
+                    resultante < 0 && styles.resultanteWarn,
+                  ]}
+                >
+                  Stock resultante:{' '}
+                  <Text
+                    style={[
+                      styles.resultanteNum,
+                      resultante < 0 && styles.resultanteWarn,
+                    ]}
+                  >
+                    {resultante}
+                  </Text>
+                </Text>
+              </View>
+            );
+          }
+          return (
           <View style={styles.linea}>
             <Text style={styles.lineaNombre}>{item.nombre}</Text>
             <View style={styles.lineaMain}>
-              {tipo !== 'ajuste' && (
-                <View style={styles.col}>
-                  <Text style={styles.colLabel}>
-                    {tipo === 'compra' ? 'Costo c/u' : 'Precio c/u'}
+              <View style={styles.col}>
+                <Text style={styles.colLabel}>
+                  {tipo === 'compra' ? 'Costo c/u' : 'Precio c/u'}
+                </Text>
+                {tipo === 'compra' ? (
+                  <TextInput
+                    style={styles.costoInput}
+                    keyboardType="numeric"
+                    value={
+                      item.precio_unitario_snapshot
+                        ? String(item.precio_unitario_snapshot)
+                        : ''
+                    }
+                    onChangeText={(texto) => cambiarCosto(item.barcode, texto)}
+                    placeholder="0"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                ) : (
+                  <Text style={styles.colValue}>
+                    {formatCOP(item.precio_unitario_snapshot)}
                   </Text>
-                  {tipo === 'compra' ? (
-                    <TextInput
-                      style={styles.costoInput}
-                      keyboardType="numeric"
-                      value={
-                        item.precio_unitario_snapshot
-                          ? String(item.precio_unitario_snapshot)
-                          : ''
-                      }
-                      onChangeText={(texto) => cambiarCosto(item.barcode, texto)}
-                      placeholder="0"
-                      placeholderTextColor={colors.textMuted}
-                    />
-                  ) : (
-                    <Text style={styles.colValue}>
-                      {formatCOP(item.precio_unitario_snapshot)}
-                    </Text>
-                  )}
-                </View>
-              )}
+                )}
+              </View>
 
               <View style={styles.col}>
                 <Text style={styles.colLabel}>Cantidad</Text>
@@ -247,17 +384,16 @@ export default function TransaccionScreen() {
                 </View>
               </View>
 
-              {tipo !== 'ajuste' && (
-                <View style={[styles.col, styles.colRight]}>
-                  <Text style={styles.colLabel}>Total</Text>
-                  <Text style={styles.subtotal}>
-                    {formatCOP(item.cantidad * item.precio_unitario_snapshot)}
-                  </Text>
-                </View>
-              )}
+              <View style={[styles.col, styles.colRight]}>
+                <Text style={styles.colLabel}>Total</Text>
+                <Text style={styles.subtotal}>
+                  {formatCOP(item.cantidad * item.precio_unitario_snapshot)}
+                </Text>
+              </View>
             </View>
           </View>
-        )}
+          );
+        }}
       />
 
       <View style={styles.footer}>
@@ -332,6 +468,47 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   lineaNombre: { fontSize: font.md, fontWeight: '700', color: colors.text },
+  flex1: { flex: 1 },
+  lineaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  stockActual: { fontSize: font.sm, color: colors.textMuted },
+  stockActualNum: { color: colors.text, fontWeight: '700' },
+  ajusteControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  ajusteInput: {
+    flex: 1,
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    fontSize: font.lg,
+    fontWeight: '700',
+    color: colors.text,
+    backgroundColor: colors.surfaceAlt,
+  },
+  signBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signBtnText: { fontSize: font.lg, fontWeight: '800', color: colors.text },
+  resultante: { fontSize: font.sm, color: colors.textMuted },
+  resultanteNum: { color: colors.text, fontWeight: '800' },
+  resultanteWarn: { color: colors.danger },
   lineaMain: {
     flexDirection: 'row',
     justifyContent: 'space-between',

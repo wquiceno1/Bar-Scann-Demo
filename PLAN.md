@@ -12,7 +12,9 @@
 
 ✅ **Prueba en campo realizada con éxito** usando APK instalado en dispositivo Android. La app respondió bien en operación real; quedaron comentarios y ajustes menores para una iteración posterior.
 
-🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen); y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
+✅ **Ajustes post prueba de campo (v1.0.1)** — tres iteraciones derivadas del uso real, **sin cambios de base de datos** (no hay migración; `inventario.db` y el respaldo no se ven afectados): (1) módulo de ajuste de inventario con stock actual visible, cantidad editable, soporte de valores negativos y vista previa del stock resultante; (2) catálogo con orden por stock y precio (asc/desc), filtro de "stock bajo" e indicador visual de stock agotado/bajo; (3) alta de producto sin código (granel) accesible desde la pantalla de carga inicial. Se subió `version` a `1.0.1`. Detalle por iteración en [docs/ajustes-prueba-campo.md](docs/ajustes-prueba-campo.md).
+
+🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen); validar en dispositivo los ajustes v1.0.1; y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
 
 > Historial: la demo técnica de escaneo (validación de cámara + latencia API) está en [Demo técnica (completada)](#demo-técnica-completada). El diseño detallado del sistema sigue vigente más abajo.
 

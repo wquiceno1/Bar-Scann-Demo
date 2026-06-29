@@ -21,10 +21,13 @@ import { colors, font, radius, spacing } from '../../theme/tokens';
 export default function NuevoProductoScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const params = useLocalSearchParams<{ barcode?: string }>();
+  const params = useLocalSearchParams<{ barcode?: string; granel?: string }>();
 
   const [barcode] = useState(params.barcode ?? '');
-  const [sinCodigo, setSinCodigo] = useState(!params.barcode);
+  // 'sin código' se pre-marca al entrar desde "granel" o cuando no hay barcode.
+  const [sinCodigo, setSinCodigo] = useState(
+    params.granel === '1' || !params.barcode
+  );
   const [nombre, setNombre] = useState('');
   const [modoPrecio, setModoPrecio] = useState<ModoPrecio>('margen');
   const [costo, setCosto] = useState('');
@@ -173,6 +176,7 @@ export default function NuevoProductoScreen() {
         <Input
           label="Stock inicial"
           keyboardType="numeric"
+          selectTextOnFocus
           value={stockInicial}
           onChangeText={setStockInicial}
         />

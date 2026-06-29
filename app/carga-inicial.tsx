@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import ScannerView from '../components/ScannerView';
@@ -47,12 +47,22 @@ export default function CargaInicialScreen() {
   return (
     <View style={styles.container}>
       <ScannerView onScan={onScan} paused={paused} />
-      <View style={styles.hint}>
-        <Ionicons name="scan-outline" size={20} color={colors.textInverse} />
-        <Text style={styles.hintText}>
-          Escanea cada producto de la tienda para darlo de alta con su conteo
-          inicial.
-        </Text>
+      <View style={styles.bottomBar}>
+        <Pressable
+          onPress={() => router.push('/producto/nuevo?granel=1')}
+          style={({ pressed }) => [styles.granelBtn, pressed && styles.pressed]}
+        >
+          <Ionicons name="pricetag-outline" size={18} color={colors.primary} />
+          <Text style={styles.granelBtnText}>
+            Agregar producto sin código (granel)
+          </Text>
+        </Pressable>
+        <View style={styles.hint}>
+          <Ionicons name="scan-outline" size={20} color={colors.textInverse} />
+          <Text style={styles.hintText}>
+            O escanea cada producto para darlo de alta con su conteo inicial.
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -60,11 +70,26 @@ export default function CargaInicialScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  hint: {
+  pressed: { opacity: 0.85 },
+  bottomBar: {
     position: 'absolute',
     bottom: spacing.xxl,
     left: spacing.lg,
     right: spacing.lg,
+    gap: spacing.sm,
+  },
+  granelBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  granelBtnText: { color: colors.primary, fontSize: font.md, fontWeight: '700' },
+  hint: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
