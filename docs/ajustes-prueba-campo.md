@@ -220,3 +220,112 @@ alta un producto a granel sin escanear algo primero.
       pausa).
 - [ ] El flujo de escaneo normal (código nuevo → alta con barcode; existente →
       alerta) sigue intacto.
+
+---
+
+## Iteración 4 — Búsqueda insensible a acentos (2026-06-30)
+
+**Contexto:** los productos registrados con tilde (p. ej. "Plátano", "Limón") no
+aparecían en ningún buscador. La causa: `LIKE` de SQLite es **sensible a
+acentos**, y además podía fallar por diferencias de normalización Unicode
+(NFC vs NFD) entre lo almacenado y lo tecleado.
+
+### Qué se implementó
+Fix **puro en la capa de consultas**, robusto a NFC/NFD y en ambos sentidos
+(buscar "platano" encuentra "Plátano", y viceversa):
+- **[db/util.ts](../db/util.ts)** — dos helpers:
+  - `normalizarBusqueda(s)`: descompone (NFD), quita marcas combinantes
+    (U+0300–U+036F) y pasa a minúsculas. Normaliza el **término tecleado**.
+  - `sqlNormalizar(columna)`: arma una expresión SQL equivalente
+    (`replace(char(...))` para marcas combinantes + `replace` de precompuestos
+    español + `lower`). Normaliza la **columna** en la comparación. `columna` es
+    un identificador del código (no entrada del usuario), seguro de interpolar.
+- **[db/productos.ts](../db/productos.ts)** — `listarProductos` compara el
+  nombre con `sqlNormalizar('nombre') LIKE ?` y término normalizado. El código de
+  barras sigue con comparación directa (no tiene acentos). Cubre el buscador del
+  **catálogo** y el de **ventas/compras** (`BuscadorProducto`).
+- **[db/transacciones.ts](../db/transacciones.ts)** — el filtro `contraparte`
+  del historial usa la misma normalización sobre `cliente_proveedor`.
+
+### Decisiones
+- **Sin migración ni columna nueva.** Se evaluó una columna `nombre_norm`
+  indexable, pero la solución por expresión SQL no toca el esquema ni el
+  respaldo ([lib/backup.ts](../lib/backup.ts) usa listas de columnas explícitas)
+  y funciona sobre los datos existentes tal cual están. Para un catálogo de una
+  sola tienda el escaneo completo es irrelevante en rendimiento.
+- Se cubrió el set español (á é í ó ú ü ñ + mayúsculas) y, vía marcas
+  combinantes, cualquier acento en forma NFD.
+
+### Modelo de datos
+- **Sin migración.** Solo cambia el SQL de las consultas de búsqueda.
+
+### Verificación
+- Prueba unitaria del normalizador + equivalente SQL en JS: "Café/café/CAFÉ",
+  "Plátano", "Niño", "Jalapeño", "Limón" → todos normalizan igual en NFC y NFD;
+  match correcto en ambos sentidos. `tsc --noEmit` limpio.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Buscar "platano" (sin tilde) encuentra "Plátano".
+- [ ] Buscar "Plátano" (con tilde) encuentra "Plátano".
+- [ ] Igual en el buscador de venta/compra (Agregar sin escanear).
+- [ ] Filtro de contraparte en historial encuentra nombres con tilde.
+
+---
+
+## Iteración 5 — Orden inverso en la sesión de transacción (2026-06-30)
+
+**Contexto:** al agregar productos a una venta/compra, cada nuevo iba al final
+de la lista, obligando a hacer scroll para ver lo recién agregado.
+
+### Qué se implementó
+- **[app/transaccion/[tipo].tsx](../app/transaccion/[tipo].tsx)** — en
+  `agregarProducto`, los productos **nuevos se insertan arriba** (`[nuevo, ...prev]`),
+  así lo último ingresado queda visible sin scroll y lo anterior baja. Re-escanear
+  un producto ya presente **incrementa su cantidad en su lugar** (no salta de
+  posición). Aplica a venta, compra y ajuste (la función es compartida).
+
+### Modelo de datos
+- **Sin migración.** Solo cambia el orden de inserción en el estado de UI.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Agregar varios productos: el último queda arriba.
+- [ ] Re-escanear uno existente sube su cantidad sin cambiar de posición.
+- [ ] Total y edición de costo/cantidad siguen correctos.
+
+---
+
+## Iteración 6 — Precarga del costo en compra (2026-06-30)
+
+**Contexto:** al escanear un producto en una compra, el input de costo salía
+vacío. Causa: en la carga inicial los productos se crean con **precio de venta
+fijo y sin costo** (`costo = null`), así que no había nada que precargar.
+
+### Qué se implementó
+- **[app/transaccion/[tipo].tsx](../app/transaccion/[tipo].tsx)** — en compra,
+  el input de costo precarga `prod.costo` si existe; si es `null`, parte del
+  **precio de venta** como referencia editable (`costoCompra = prod.costo ?? prod.precio`).
+  Tanto `precio_unitario_snapshot` como `costo_snapshot` de la línea toman ese
+  valor, para que al finalizar el costo quede registrado en el producto.
+  Se agregó `selectTextOnFocus` al input (el valor precargado se reemplaza al
+  escribir) y una referencia "Venta: $X" debajo del input.
+- **[db/types.ts](../db/types.ts)** — `LineaBorrador.precio_venta?` (solo UI,
+  referencia del precio de venta vigente en compra).
+
+### Por qué optimiza la carga inicial
+La compra es el momento natural para capturar el costo real del proveedor. Como
+`finalizarTransaccion` ya escribe el costo al producto en compra (sin tocar el
+precio fijo, [db/transacciones.ts](../db/transacciones.ts)), a medida que se
+compran productos el catálogo va ganando los costos que hoy faltan → habilita
+reportes de utilidad/margen sin trabajo extra.
+
+### Modelo de datos
+- **Sin migración.** Solo cambia el valor precargado en la UI; el guardado del
+  costo en compra ya existía.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Compra de un producto con costo → precarga el costo.
+- [ ] Compra de un producto sin costo (fijo) → precarga el precio de venta y
+      muestra "Venta: $X".
+- [ ] Editar el costo y finalizar guarda el costo en el producto sin cambiar su
+      precio de venta.
+- [ ] La venta sigue mostrando el precio de venta (no editable) como antes.

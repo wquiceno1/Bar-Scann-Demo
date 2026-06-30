@@ -1,7 +1,7 @@
 import type { SQLiteBindValue, SQLiteDatabase } from 'expo-sqlite';
 import type { ModoPrecio, Producto } from './types';
 import { finalizarTransaccion } from './transacciones';
-import { nowIso } from './util';
+import { normalizarBusqueda, nowIso, sqlNormalizar } from './util';
 
 export async function getProducto(
   db: SQLiteDatabase,
@@ -38,9 +38,11 @@ export async function listarProductos(
   const params: SQLiteBindValue[] = [];
 
   if (busqueda && busqueda.trim().length > 0) {
-    const q = `%${busqueda.trim()}%`;
-    where.push('(nombre LIKE ? OR barcode LIKE ?)');
-    params.push(q, q);
+    const term = busqueda.trim();
+    // Nombre: comparación insensible a acentos (ambos lados normalizados).
+    // Código de barras: comparación directa (no tiene acentos).
+    where.push(`(${sqlNormalizar('nombre')} LIKE ? OR barcode LIKE ?)`);
+    params.push(`%${normalizarBusqueda(term)}%`, `%${term}%`);
   }
   if (soloStockBajo) {
     where.push('stock_actual <= ?');

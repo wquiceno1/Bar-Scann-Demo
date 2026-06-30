@@ -7,7 +7,13 @@ import type {
   TransaccionItem,
 } from './types';
 import { getMargenGeneral } from './configuracion';
-import { newId, nowIso, precioConMargen } from './util';
+import {
+  newId,
+  normalizarBusqueda,
+  nowIso,
+  precioConMargen,
+  sqlNormalizar,
+} from './util';
 
 export type NuevaTransaccion = {
   tipo: TipoTransaccion;
@@ -146,8 +152,8 @@ export async function listarTransacciones(
     params.push(filtro.hasta);
   }
   if (filtro.contraparte) {
-    where.push('cliente_proveedor LIKE ?');
-    params.push(`%${filtro.contraparte}%`);
+    where.push(`${sqlNormalizar('cliente_proveedor')} LIKE ?`);
+    params.push(`%${normalizarBusqueda(filtro.contraparte)}%`);
   }
   const sql =
     'SELECT * FROM transacciones' +

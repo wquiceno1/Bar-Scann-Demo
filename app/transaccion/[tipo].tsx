@@ -59,12 +59,17 @@ export default function TransaccionScreen() {
   // Agrega/incrementa la línea de un producto (compartido por escaneo y buscador).
   const agregarProducto = useCallback(
     (prod: Producto) => {
+      // En compra se precarga el costo guardado; si el producto aún no tiene
+      // costo (caso típico en carga inicial con precio fijo), se parte del
+      // precio de venta como referencia editable para no dejar el campo vacío.
+      const costoCompra = prod.costo ?? prod.precio;
       const precioUnit =
         tipo === 'venta'
           ? prod.precio
           : tipo === 'compra'
-            ? (prod.costo ?? 0)
+            ? costoCompra
             : 0;
+      const costoSnap = tipo === 'compra' ? costoCompra : prod.costo;
 
       // El número manda: al escanear se descarta el override de texto.
       setCantTexto((t) => {
@@ -80,17 +85,19 @@ export default function TransaccionScreen() {
           copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + 1 };
           return copia;
         }
+        // El producto recién agregado va arriba para no tener que hacer scroll.
         return [
-          ...prev,
           {
             barcode: prod.barcode,
             nombre: prod.nombre,
             // En ajuste se arranca en 0 (delta a escribir); en venta/compra en 1.
             cantidad: tipo === 'ajuste' ? 0 : 1,
-            costo_snapshot: prod.costo,
+            costo_snapshot: costoSnap,
             precio_unitario_snapshot: precioUnit,
             stock_actual: prod.stock_actual,
+            precio_venta: prod.precio,
           },
+          ...prev,
         ];
       });
     },
@@ -346,18 +353,24 @@ export default function TransaccionScreen() {
                   {tipo === 'compra' ? 'Costo c/u' : 'Precio c/u'}
                 </Text>
                 {tipo === 'compra' ? (
-                  <TextInput
-                    style={styles.costoInput}
-                    keyboardType="numeric"
-                    value={
-                      item.precio_unitario_snapshot
-                        ? String(item.precio_unitario_snapshot)
-                        : ''
-                    }
-                    onChangeText={(texto) => cambiarCosto(item.barcode, texto)}
-                    placeholder="0"
-                    placeholderTextColor={colors.textMuted}
-                  />
+                  <>
+                    <TextInput
+                      style={styles.costoInput}
+                      keyboardType="numeric"
+                      selectTextOnFocus
+                      value={
+                        item.precio_unitario_snapshot
+                          ? String(item.precio_unitario_snapshot)
+                          : ''
+                      }
+                      onChangeText={(texto) => cambiarCosto(item.barcode, texto)}
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                    <Text style={styles.refVenta}>
+                      Venta: {formatCOP(item.precio_venta ?? 0)}
+                    </Text>
+                  </>
                 ) : (
                   <Text style={styles.colValue}>
                     {formatCOP(item.precio_unitario_snapshot)}
@@ -535,6 +548,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     backgroundColor: colors.surfaceAlt,
   },
+  refVenta: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
   qtyBtn: {
     width: 34,
     height: 34,

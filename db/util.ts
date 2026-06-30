@@ -28,3 +28,41 @@ export function precioConMargen(costo: number, margenPct: number): number {
 export function formatCOP(valor: number): string {
   return '$' + Math.round(valor).toLocaleString('es-CO');
 }
+
+/**
+ * Normaliza texto para búsqueda: descompone, elimina tildes/diéresis (ñ→n) y
+ * pasa a minúsculas. Robusto a la forma Unicode (NFC/NFD) porque descompone
+ * antes de quitar las marcas combinantes (rango U+0300–U+036F).
+ */
+export function normalizarBusqueda(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+// Marcas combinantes (texto en forma NFD) y caracteres precompuestos (NFC) más
+// comunes en español. Se quitan/transforman para que la comparación LIKE ignore
+// los acentos sin importar cómo se haya almacenado el nombre.
+const MARCAS_COMBINANTES = [0x300, 0x301, 0x302, 0x303, 0x308, 0x327];
+const PRECOMPUESTOS: [string, string][] = [
+  ['á', 'a'], ['é', 'e'], ['í', 'i'], ['ó', 'o'], ['ú', 'u'], ['ü', 'u'], ['ñ', 'n'],
+  ['Á', 'a'], ['É', 'e'], ['Í', 'i'], ['Ó', 'o'], ['Ú', 'u'], ['Ü', 'u'], ['Ñ', 'n'],
+];
+
+/**
+ * Construye una expresión SQL que normaliza `columna` igual que
+ * `normalizarBusqueda`, para comparaciones LIKE insensibles a acentos.
+ * `columna` es un identificador controlado por el código (nunca entrada del
+ * usuario), por eso es seguro interpolarlo.
+ */
+export function sqlNormalizar(columna: string): string {
+  let expr = columna;
+  for (const cp of MARCAS_COMBINANTES) {
+    expr = `replace(${expr}, char(${cp}), '')`;
+  }
+  for (const [de, a] of PRECOMPUESTOS) {
+    expr = `replace(${expr}, '${de}', '${a}')`;
+  }
+  return `lower(${expr})`;
+}
