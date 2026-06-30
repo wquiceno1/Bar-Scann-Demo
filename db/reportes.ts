@@ -31,6 +31,55 @@ export async function totalPorTipo(
   return row?.total ?? 0;
 }
 
+export type ResumenDia = {
+  total: number; // COP vendidos en el día
+  numVentas: number; // cantidad de transacciones de venta
+  unidades: number; // unidades vendidas (suma de cantidades)
+  utilidad: number; // ventas − costo de lo vendido en el día
+};
+
+/** Resumen de ventas de un día concreto ('YYYY-MM-DD'). Ignora compras/ajustes. */
+export async function resumenVentasDia(
+  db: SQLiteDatabase,
+  dia: string
+): Promise<ResumenDia> {
+  const desde = `${dia}T00:00:00`;
+  const hasta = `${dia}T23:59:59`;
+
+  const cab = await db.getFirstAsync<{ total: number; numVentas: number }>(
+    `SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS numVentas
+       FROM transacciones
+      WHERE tipo = 'venta' AND fecha_hora >= ? AND fecha_hora <= ?`,
+    desde,
+    hasta
+  );
+
+  const det = await db.getFirstAsync<{
+    unidades: number;
+    ingresos: number;
+    costo: number;
+  }>(
+    `SELECT
+       COALESCE(SUM(i.cantidad), 0)                                AS unidades,
+       COALESCE(SUM(i.subtotal), 0)                                AS ingresos,
+       COALESCE(SUM(i.cantidad * COALESCE(i.costo_snapshot, 0)), 0) AS costo
+     FROM transaccion_items i
+     JOIN transacciones t ON t.id = i.transaccion_id
+     WHERE t.tipo = 'venta' AND t.fecha_hora >= ? AND t.fecha_hora <= ?`,
+    desde,
+    hasta
+  );
+
+  const ingresos = det?.ingresos ?? 0;
+  const costo = det?.costo ?? 0;
+  return {
+    total: cab?.total ?? 0,
+    numVentas: cab?.numVentas ?? 0,
+    unidades: det?.unidades ?? 0,
+    utilidad: ingresos - costo,
+  };
+}
+
 export type SerieDia = { dia: string; total: number };
 
 /** Serie diaria de totales para un tipo en un rango, para graficar. */

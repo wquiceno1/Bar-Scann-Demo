@@ -1,18 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Dimensions,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { LineChart } from 'react-native-chart-kit';
 import { Card, Screen } from '../../components/ui';
 import {
+  resumenVentasDia,
   serieDiaria,
   totalPorTipo,
   utilidadPeriodo,
   valorInventario,
+  type ResumenDia,
   type SerieDia,
 } from '../../db/reportes';
 import { formatCOP } from '../../db/util';
+import {
+  dateADiaStr,
+  diaADate,
+  fechaLarga,
+  hoyStr,
+  sumarDias,
+} from '../../lib/fecha';
 import { colors, font, radius, spacing } from '../../theme/tokens';
 
 function rangoMesActual(): { desde: string; hasta: string } {
@@ -38,6 +55,19 @@ const chartWidth = Dimensions.get('window').width - spacing.lg * 2;
 export default function ReportesScreen() {
   const db = useSQLiteContext();
   const [d, setD] = useState<Datos | null>(null);
+  const [dia, setDia] = useState(hoyStr());
+  const [resumen, setResumen] = useState<ResumenDia | null>(null);
+  const [mostrarPicker, setMostrarPicker] = useState(false);
+
+  const esHoy = dia === hoyStr();
+
+  // Resumen del día seleccionado: recarga al cambiar la fecha y al volver a la
+  // pantalla (p. ej. tras registrar una venta).
+  useFocusEffect(
+    useCallback(() => {
+      resumenVentasDia(db, dia).then(setResumen);
+    }, [db, dia])
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -66,6 +96,82 @@ export default function ReportesScreen() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.section}>Ventas del día</Text>
+        <Card style={styles.diaCard}>
+          <View style={styles.diaNav}>
+            <Pressable
+              onPress={() => setDia((x) => sumarDias(x, -1))}
+              hitSlop={8}
+              style={styles.navBtn}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </Pressable>
+            <Pressable
+              onPress={() => setMostrarPicker(true)}
+              style={styles.diaFechaBtn}
+            >
+              <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+              <Text style={styles.diaFecha}>
+                {esHoy ? 'Hoy' : fechaLarga(dia)}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setDia((x) => sumarDias(x, 1))}
+              disabled={esHoy}
+              hitSlop={8}
+              style={[styles.navBtn, esHoy && styles.navBtnOff]}
+            >
+              <Ionicons name="chevron-forward" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          {!esHoy && (
+            <Pressable onPress={() => setDia(hoyStr())} style={styles.hoyBtn}>
+              <Ionicons name="today-outline" size={14} color={colors.primary} />
+              <Text style={styles.hoyBtnText}>Volver a hoy</Text>
+            </Pressable>
+          )}
+        </Card>
+
+        <Kpi
+          icon="cash"
+          label="Total vendido"
+          value={resumen?.total}
+          color={colors.venta}
+          big
+        />
+        <Kpi
+          icon="receipt-outline"
+          label="N° de ventas"
+          value={resumen?.numVentas}
+          conteo
+        />
+        <Kpi
+          icon="cube-outline"
+          label="Unidades vendidas"
+          value={resumen?.unidades}
+          conteo
+        />
+        <Kpi
+          icon="trending-up"
+          label="Utilidad del día"
+          value={resumen?.utilidad}
+          color={colors.venta}
+        />
+
+        {mostrarPicker && (
+          <DateTimePicker
+            value={diaADate(dia)}
+            mode="date"
+            maximumDate={new Date()}
+            onChange={(event, selected) => {
+              setMostrarPicker(false);
+              if (event.type === 'set' && selected) {
+                setDia(dateADiaStr(selected));
+              }
+            }}
+          />
+        )}
+
         <Text style={styles.section}>Ventas por día (este mes)</Text>
         <Card style={styles.chartCard}>
           {serie.length > 0 ? (
@@ -142,12 +248,14 @@ function Kpi({
   value,
   color = colors.text,
   big = false,
+  conteo = false,
 }: {
   icon: IconName;
   label: string;
   value?: number;
   color?: string;
   big?: boolean;
+  conteo?: boolean;
 }) {
   return (
     <Card style={styles.kpi}>
@@ -157,7 +265,7 @@ function Kpi({
       <View style={{ flex: 1 }}>
         <Text style={styles.kpiLabel}>{label}</Text>
         <Text style={[styles.kpiValue, big && styles.kpiValueBig, { color }]}>
-          {value == null ? '—' : formatCOP(value)}
+          {value == null ? '—' : conteo ? String(value) : formatCOP(value)}
         </Text>
       </View>
     </Card>
@@ -174,6 +282,44 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginTop: spacing.sm,
   },
+  diaCard: { gap: spacing.sm },
+  diaNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  navBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navBtnOff: { opacity: 0.35 },
+  diaFechaBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  diaFecha: {
+    fontSize: font.md,
+    fontWeight: '800',
+    color: colors.text,
+    textTransform: 'capitalize',
+  },
+  hoyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  hoyBtnText: { fontSize: font.sm, color: colors.primary, fontWeight: '700' },
   chartCard: { alignItems: 'center', paddingHorizontal: spacing.sm },
   chartEmpty: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   chartEmptyText: { color: colors.textMuted, fontSize: font.sm },

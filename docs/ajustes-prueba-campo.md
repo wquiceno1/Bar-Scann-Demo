@@ -329,3 +329,75 @@ reportes de utilidad/margen sin trabajo extra.
 - [ ] Editar el costo y finalizar guarda el costo en el producto sin cambiar su
       precio de venta.
 - [ ] La venta sigue mostrando el precio de venta (no editable) como antes.
+
+---
+
+## Iteración 7 — Reportes: ventas del día con filtro de fecha (2026-06-30)
+
+**Contexto:** los reportes solo trabajaban a nivel de mes. Se necesita ver el
+resumen de ventas de un día puntual (por defecto hoy) y poder elegir la fecha.
+
+### Qué se implementó
+- **[db/reportes.ts](../db/reportes.ts)** — `resumenVentasDia(db, dia)` devuelve
+  `{ total, numVentas, unidades, utilidad }` para un `'YYYY-MM-DD'` (reutiliza la
+  lógica de rango por día). Ignora compras/ajustes.
+- **[app/(tabs)/reportes.tsx](../app/(tabs)/reportes.tsx)** — nueva sección
+  **"Ventas del día"** arriba del reporte mensual:
+  - Selector de fecha con **flechas ◀ ▶** (día anterior/siguiente, ▶ deshabilitada
+    en hoy), **"Volver a hoy"**, y al tocar la fecha se abre un **calendario
+    nativo** (`@react-native-community/datetimepicker`, `maximumDate = hoy`).
+  - KPIs del día: total vendido, N° de ventas, unidades vendidas y utilidad.
+  - El resumen recarga al cambiar la fecha y al volver a la pantalla.
+  - `Kpi` ahora soporta `conteo` (muestra números sin formato COP).
+
+### Dependencia / build
+- **Se agregó el módulo nativo `@react-native-community/datetimepicker@8.4.4`**
+  (vía `npx expo install`; el config plugin quedó en `app.json`). Por ser nativo,
+  **el calendario solo aparece tras generar un APK nuevo**. Las flechas y "Volver
+  a hoy" funcionan sin él, pero el componente requiere el rebuild.
+
+### Modelo de datos
+- **Sin migración.** Solo nuevas consultas de lectura.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Al abrir Reportes, "Ventas del día" muestra el resumen de hoy.
+- [ ] Flechas ◀ ▶ cambian el día y recargan el resumen; ▶ se bloquea en hoy.
+- [ ] Tocar la fecha abre el calendario y no deja elegir fechas futuras.
+- [ ] "Volver a hoy" reaparece al salir de hoy y regresa correctamente.
+- [ ] Total, N° de ventas, unidades y utilidad cuadran con las ventas del día.
+
+---
+
+## Iteración 8 — Historial por día (2026-06-30)
+
+**Contexto:** el historial cargaba **todo el histórico**, y con muchas operaciones
+la lista crece demasiado y deja de ser práctica. Se quiere una vista reducida a
+las operaciones del **día seleccionado**, conservando los filtros por tipo.
+
+### Qué se implementó
+- **[lib/fecha.ts](../lib/fecha.ts)** (nuevo) — helpers de fecha compartidos
+  (`hoyStr`, `dateADiaStr`, `diaADate`, `sumarDias`, `fechaLarga`, `rangoDia`).
+  Reportes y Historial usan el **mismo selector de día** (DRY).
+- **[app/(tabs)/reportes.tsx](../app/(tabs)/reportes.tsx)** — refactor para
+  consumir esos helpers (se quitaron las copias locales de la iteración 7).
+- **[app/(tabs)/historial.tsx](../app/(tabs)/historial.tsx)** — selector de día
+  (flechas ◀ ▶, "Volver a hoy", calendario nativo, default hoy) arriba de los
+  chips de tipo. La carga ahora pasa `rangoDia(dia)` como `desde/hasta` a
+  `listarTransacciones`, así solo trae las operaciones de ese día. Los chips de
+  tipo (Todos/Venta/Compra/Ajuste) se conservan y se combinan con el día. Cada
+  fila muestra solo la **hora** (el día ya está fijado por el selector).
+
+### Dependencia / build
+- Reusa `@react-native-community/datetimepicker` (ya agregado en la iteración 7).
+  El calendario solo aparece en un **APK nuevo**; flechas y "Volver a hoy"
+  funcionan sin él.
+
+### Modelo de datos
+- **Sin migración.** `listarTransacciones` ya soportaba `desde/hasta`.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Al abrir Historial, muestra solo las operaciones de hoy.
+- [ ] Flechas ◀ ▶ cambian el día; ▶ se bloquea en hoy.
+- [ ] Calendario permite saltar a cualquier día pasado (no futuros).
+- [ ] Los chips de tipo filtran dentro del día seleccionado.
+- [ ] "Volver a hoy" funciona; cada fila muestra la hora correcta.

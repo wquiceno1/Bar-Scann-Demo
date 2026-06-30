@@ -2,7 +2,7 @@
   "expo": {
     "name": "bar-scan-demo",
     "slug": "bar-scan-demo",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "scheme": "barscan",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -41,7 +41,8 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-local-authentication",
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},
