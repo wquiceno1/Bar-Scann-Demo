@@ -21,10 +21,19 @@ export default function CatalogoScreen() {
   const [orden, setOrden] = useState<OrdenProducto>('nombre');
   const [dir, setDir] = useState<DireccionOrden>('asc');
   const [soloStockBajo, setSoloStockBajo] = useState(false);
+  const [soloInactivos, setSoloInactivos] = useState(false);
   const [productos, setProductos] = useState<Producto[]>([]);
 
   const cargar = useCallback(
-    (q: string, opts: { orden: OrdenProducto; dir: DireccionOrden; soloStockBajo: boolean }) => {
+    (
+      q: string,
+      opts: {
+        orden: OrdenProducto;
+        dir: DireccionOrden;
+        soloStockBajo: boolean;
+        soloInactivos: boolean;
+      }
+    ) => {
       listarProductos(db, q, opts).then(setProductos);
     },
     [db]
@@ -32,8 +41,8 @@ export default function CatalogoScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      cargar(busqueda, { orden, dir, soloStockBajo });
-    }, [cargar, busqueda, orden, dir, soloStockBajo])
+      cargar(busqueda, { orden, dir, soloStockBajo, soloInactivos });
+    }, [cargar, busqueda, orden, dir, soloStockBajo, soloInactivos])
   );
 
   // Chip de orden: 1er toque → mayor→menor (desc), 2º → menor→mayor (asc),
@@ -53,13 +62,24 @@ export default function CatalogoScreen() {
     }
     setOrden(nuevoOrden);
     setDir(nuevaDir);
-    cargar(busqueda, { orden: nuevoOrden, dir: nuevaDir, soloStockBajo });
+    cargar(busqueda, {
+      orden: nuevoOrden,
+      dir: nuevaDir,
+      soloStockBajo,
+      soloInactivos,
+    });
   };
 
   const toggleStockBajo = () => {
     const next = !soloStockBajo;
     setSoloStockBajo(next);
-    cargar(busqueda, { orden, dir, soloStockBajo: next });
+    cargar(busqueda, { orden, dir, soloStockBajo: next, soloInactivos });
+  };
+
+  const toggleInactivos = () => {
+    const next = !soloInactivos;
+    setSoloInactivos(next);
+    cargar(busqueda, { orden, dir, soloStockBajo, soloInactivos: next });
   };
 
   return (
@@ -69,7 +89,7 @@ export default function CatalogoScreen() {
         value={busqueda}
         onChangeText={(t) => {
           setBusqueda(t);
-          cargar(t, { orden, dir, soloStockBajo });
+          cargar(t, { orden, dir, soloStockBajo, soloInactivos });
         }}
         style={styles.search}
       />
@@ -103,6 +123,19 @@ export default function CatalogoScreen() {
             Stock bajo
           </Text>
         </Pressable>
+        <Pressable
+          onPress={toggleInactivos}
+          style={[styles.chip, soloInactivos && styles.chipOn]}
+        >
+          <Ionicons
+            name="archive-outline"
+            size={14}
+            color={soloInactivos ? colors.textInverse : colors.textMuted}
+          />
+          <Text style={[styles.chipText, soloInactivos && styles.chipTextOn]}>
+            Inactivos
+          </Text>
+        </Pressable>
       </View>
 
       <FlatList
@@ -112,11 +145,19 @@ export default function CatalogoScreen() {
         ListEmptyComponent={
           <EmptyState
             icon="pricetags-outline"
-            title={soloStockBajo ? 'Sin productos con stock bajo' : 'Catálogo vacío'}
+            title={
+              soloInactivos
+                ? 'Sin productos inactivos'
+                : soloStockBajo
+                  ? 'Sin productos con stock bajo'
+                  : 'Catálogo vacío'
+            }
             subtitle={
-              soloStockBajo
-                ? 'Ningún producto está por debajo del umbral.'
-                : 'Agrega productos con el botón + o usa la carga inicial escaneando.'
+              soloInactivos
+                ? 'No hay productos desactivados.'
+                : soloStockBajo
+                  ? 'Ningún producto está por debajo del umbral.'
+                  : 'Agrega productos con el botón + o usa la carga inicial escaneando.'
             }
           />
         }

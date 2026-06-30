@@ -71,6 +71,20 @@ export default function TransaccionScreen() {
             : 0;
       const costoSnap = tipo === 'compra' ? costoCompra : prod.costo;
 
+      // En venta no se puede agregar más unidades de las que hay en stock.
+      if (tipo === 'venta') {
+        const enLinea =
+          lineas.find((l) => l.barcode === prod.barcode)?.cantidad ?? 0;
+        if (enLinea + 1 > prod.stock_actual) {
+          toast(
+            prod.stock_actual <= 0
+              ? 'Sin stock disponible'
+              : `Stock máximo: ${prod.stock_actual}`
+          );
+          return;
+        }
+      }
+
       // El número manda: al escanear se descarta el override de texto.
       setCantTexto((t) => {
         const copia = { ...t };
@@ -81,6 +95,13 @@ export default function TransaccionScreen() {
       setLineas((prev) => {
         const idx = prev.findIndex((l) => l.barcode === prod.barcode);
         if (idx >= 0) {
+          // Defensa: en venta no exceder el stock disponible.
+          if (
+            tipo === 'venta' &&
+            prev[idx].cantidad + 1 > (prev[idx].stock_actual ?? 0)
+          ) {
+            return prev;
+          }
           const copia = [...prev];
           copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + 1 };
           return copia;
@@ -101,7 +122,7 @@ export default function TransaccionScreen() {
         ];
       });
     },
-    [tipo]
+    [tipo, lineas]
   );
 
   const agregarPorCodigo = useCallback(
@@ -129,9 +150,15 @@ export default function TransaccionScreen() {
   const cambiarCantidad = (barcode: string, delta: number) => {
     setLineas((prev) =>
       prev
-        .map((l) =>
-          l.barcode === barcode ? { ...l, cantidad: l.cantidad + delta } : l
-        )
+        .map((l) => {
+          if (l.barcode !== barcode) return l;
+          let cantidad = l.cantidad + delta;
+          // En venta, la cantidad no puede superar el stock disponible.
+          if (tipo === 'venta' && cantidad > (l.stock_actual ?? 0)) {
+            cantidad = l.stock_actual ?? 0;
+          }
+          return { ...l, cantidad };
+        })
         .filter((l) => l.cantidad !== 0)
     );
   };
@@ -344,9 +371,18 @@ export default function TransaccionScreen() {
               </View>
             );
           }
+          const topeVenta =
+            tipo === 'venta' && item.cantidad >= (item.stock_actual ?? 0);
           return (
           <View style={styles.linea}>
             <Text style={styles.lineaNombre}>{item.nombre}</Text>
+            {tipo === 'venta' && (
+              <Text
+                style={[styles.stockHint, topeVenta && styles.stockHintWarn]}
+              >
+                Stock disponible: {item.stock_actual ?? 0}
+              </Text>
+            )}
             <View style={styles.lineaMain}>
               <View style={styles.col}>
                 <Text style={styles.colLabel}>
@@ -389,10 +425,15 @@ export default function TransaccionScreen() {
                   </Pressable>
                   <Text style={styles.qty}>{item.cantidad}</Text>
                   <Pressable
-                    style={styles.qtyBtn}
+                    style={[styles.qtyBtn, topeVenta && styles.qtyBtnOff]}
+                    disabled={topeVenta}
                     onPress={() => cambiarCantidad(item.barcode, 1)}
                   >
-                    <Ionicons name="add" size={18} color={colors.text} />
+                    <Ionicons
+                      name="add"
+                      size={18}
+                      color={topeVenta ? colors.textMuted : colors.text}
+                    />
                   </Pressable>
                 </View>
               </View>
@@ -481,6 +522,9 @@ const styles = StyleSheet.create({
     ...shadow,
   },
   lineaNombre: { fontSize: font.md, fontWeight: '700', color: colors.text },
+  stockHint: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
+  stockHintWarn: { color: colors.danger, fontWeight: '700' },
+  qtyBtnOff: { opacity: 0.4 },
   flex1: { flex: 1 },
   lineaHeader: {
     flexDirection: 'row',

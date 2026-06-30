@@ -401,3 +401,82 @@ las operaciones del **día seleccionado**, conservando los filtros por tipo.
 - [ ] Calendario permite saltar a cualquier día pasado (no futuros).
 - [ ] Los chips de tipo filtran dentro del día seleccionado.
 - [ ] "Volver a hoy" funciona; cada fila muestra la hora correcta.
+
+---
+
+## Iteración 9 — Reasignar código, convertir a sin código y desactivar (2026-06-30)
+
+**Contexto:** algunos productos quedaron con códigos de barras erróneos o que no
+leen, y no había forma de corregirlos ni de retirar un producto del catálogo.
+Borrar es delicado porque las ventas referencian el producto.
+
+### Diseño (estrategia B, sin borrado físico)
+`barcode` es la **PRIMARY KEY**, así que "reasignar código" = cambiar la PK. Como
+el respaldo a Firestore usa el barcode como id de documento y es de una vía, un
+rename en sitio dejaría un **fantasma**. Por eso se usa **"retirar + crear"**:
+crear un producto nuevo con el código nuevo (copiando datos y stock), migrar las
+referencias laxas de `transaccion_items`, y **desactivar** el viejo (`activo=0`,
+stock 0). Historial y reportes quedan intactos (snapshots); el respaldo queda
+coherente (el viejo se sincroniza como inactivo). Funciona en ambos sentidos
+(código real ↔ INT-).
+
+### Qué se implementó
+- **[db/productos.ts](../db/productos.ts)** — `desactivarProducto`,
+  `reactivarProducto`, `reasignarCodigo(viejo, nuevo, { sinCodigo })` (atómica,
+  con validación de colisión: si el código nuevo ya existe avisa, y si es de un
+  inactivo sugiere reactivarlo), y `convertirASinCodigo` (genera un `INT-`).
+  `listarProductos` admite `soloInactivos` para listar los desactivados.
+- **[app/producto/[barcode].tsx](../app/producto/[barcode].tsx)** — sección de
+  acciones: **Asignar / cambiar código** (modal con escáner + entrada manual),
+  **Convertir a sin código**, **Desactivar** (con confirmación). Si el producto
+  está inactivo, muestra un banner y un botón **Reactivar**. Tras reasignar/
+  convertir, navega a la ficha del código nuevo.
+- **[app/(tabs)/catalogo.tsx](../app/(tabs)/catalogo.tsx)** — chip **"Inactivos"**
+  para ver y entrar a los productos desactivados (y reactivarlos).
+
+### Modelo de datos
+- **Sin migración.** Solo usa columnas existentes (`activo`, PK `barcode`,
+  referencia laxa `transaccion_items.barcode`). No agrega dependencias nativas,
+  así que también corre en Expo Go.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Reasignar el código de un producto a uno escaneado nuevo: el viejo queda
+      inactivo, el nuevo conserva stock e historial.
+- [ ] Convertir a sin código genera un INT- y mantiene las ventas.
+- [ ] INT- → código real (asignar) funciona igual (flujo inverso).
+- [ ] Colisión con un código existente avisa; si es inactivo sugiere reactivar.
+- [ ] Desactivar oculta del catálogo/búsqueda; "Inactivos" lo muestra; reactivar
+      lo devuelve.
+- [ ] El historial y los reportes de las ventas viejas siguen correctos.
+
+---
+
+## Iteración 10 — Tope de stock en ventas (2026-06-30)
+
+**Contexto:** en una venta se podían agregar más unidades de las que había en
+stock (p. ej. 5 con solo 3 disponibles). No había ningún control.
+
+### Qué se implementó (solo en `venta`)
+- **[app/transaccion/[tipo].tsx](../app/transaccion/[tipo].tsx)**:
+  - El botón **+ se desactiva** cuando la cantidad de la línea llega al
+    `stock_actual`.
+  - Cada línea de venta muestra **"Stock disponible: N"** (en rojo al llegar al
+    tope).
+  - Al **escanear / agregar** un producto que ya está en su tope (o sin stock),
+    avisa con un toast (`Stock máximo: N` / `Sin stock disponible`) y no lo
+    agrega.
+  - `cambiarCantidad` topa la cantidad al stock en venta (defensa adicional).
+- Compra y ajuste **no** tienen tope (en compra sumas stock; en ajuste el delta
+  puede ser cualquiera).
+
+### Notas
+- El `stock_actual` se captura al agregar el producto (ya venía en la línea desde
+  la iteración 1/6) y no se decrementa dentro del carrito; el tope es
+  `cantidad ≤ stock_actual`. El stock real se descuenta al finalizar.
+- **Sin migración** ni dependencias nuevas.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Producto con 3 en stock: en venta no deja pasar de 3 (botón + apagado).
+- [ ] Re-escanear el 4º avisa "Stock máximo: 3" y no lo suma.
+- [ ] Producto sin stock: avisa "Sin stock disponible" y no lo agrega.
+- [ ] Compra y ajuste siguen sin límite.
