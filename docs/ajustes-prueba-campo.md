@@ -480,3 +480,26 @@ stock (p. ej. 5 con solo 3 disponibles). No había ningún control.
 - [ ] Re-escanear el 4º avisa "Stock máximo: 3" y no lo suma.
 - [ ] Producto sin stock: avisa "Sin stock disponible" y no lo agrega.
 - [ ] Compra y ajuste siguen sin límite.
+
+---
+
+## Iteración 11 — Resaltado del último producto agregado (2026-06-30)
+
+**Contexto:** UX. Al agregar/escanear un producto en venta/compra/ajuste, no
+había una señal visual de cuál fue el último; conviene resaltarlo un momento.
+
+### Qué se implementó
+- **[app/transaccion/[tipo].tsx](../app/transaccion/[tipo].tsx)** — al agregar o
+  incrementar un producto, su card se **resalta** (borde + fondo tenue) y el
+  resaltado **se quita solo a los ~2.5 s**. Estado `resaltado` (barcode) con un
+  `setTimeout` que se reinicia en cada agregado y se limpia al desmontar. La card
+  base reserva un borde transparente para que el resaltado **no desplace el
+  layout**. Aplica a las tres modalidades (venta/compra/ajuste).
+
+### Modelo de datos
+- **Sin migración** ni dependencias.
+
+### Pruebas (manuales, en dispositivo)
+- [ ] Al escanear/agregar, la card nueva se resalta y se apaga a los ~2.5 s.
+- [ ] Re-escanear un producto existente resalta su línea (donde esté).
+- [ ] No hay salto de layout al aparecer/desaparecer el borde.

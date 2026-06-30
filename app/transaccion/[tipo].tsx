@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -50,6 +50,22 @@ export default function TransaccionScreen() {
   // Texto crudo del input de cantidad en 'ajuste' mientras se escribe (permite
   // estados intermedios como "-" sin perderlos). Override efímero del número.
   const [cantTexto, setCantTexto] = useState<Record<string, string>>({});
+  // Resaltado temporal del último producto agregado/incrementado.
+  const [resaltado, setResaltado] = useState<string | null>(null);
+  const resaltarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resaltar = useCallback((barcode: string) => {
+    setResaltado(barcode);
+    if (resaltarTimer.current) clearTimeout(resaltarTimer.current);
+    resaltarTimer.current = setTimeout(() => setResaltado(null), 2500);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (resaltarTimer.current) clearTimeout(resaltarTimer.current);
+    },
+    []
+  );
 
   const total = lineas.reduce(
     (acc, l) => acc + l.cantidad * l.precio_unitario_snapshot,
@@ -84,6 +100,8 @@ export default function TransaccionScreen() {
           return;
         }
       }
+
+      resaltar(prod.barcode);
 
       // El número manda: al escanear se descarta el override de texto.
       setCantTexto((t) => {
@@ -122,7 +140,7 @@ export default function TransaccionScreen() {
         ];
       });
     },
-    [tipo, lineas]
+    [tipo, lineas, resaltar]
   );
 
   const agregarPorCodigo = useCallback(
@@ -307,7 +325,12 @@ export default function TransaccionScreen() {
                 ? cantTexto[item.barcode]
                 : String(item.cantidad);
             return (
-              <View style={styles.linea}>
+              <View
+                style={[
+                  styles.linea,
+                  item.barcode === resaltado && styles.lineaResaltada,
+                ]}
+              >
                 <View style={styles.lineaHeader}>
                   <Text style={[styles.lineaNombre, styles.flex1]}>
                     {item.nombre}
@@ -374,7 +397,12 @@ export default function TransaccionScreen() {
           const topeVenta =
             tipo === 'venta' && item.cantidad >= (item.stock_actual ?? 0);
           return (
-          <View style={styles.linea}>
+          <View
+            style={[
+              styles.linea,
+              item.barcode === resaltado && styles.lineaResaltada,
+            ]}
+          >
             <Text style={styles.lineaNombre}>{item.nombre}</Text>
             {tipo === 'venta' && (
               <Text
@@ -519,7 +547,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.md,
+    // Borde transparente reservado para que el resaltado no desplace el layout.
+    borderWidth: 2,
+    borderColor: 'transparent',
     ...shadow,
+  },
+  lineaResaltada: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '14',
   },
   lineaNombre: { fontSize: font.md, fontWeight: '700', color: colors.text },
   stockHint: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },

@@ -12,9 +12,24 @@
 
 ✅ **Prueba en campo realizada con éxito** usando APK instalado en dispositivo Android. La app respondió bien en operación real; quedaron comentarios y ajustes menores para una iteración posterior.
 
-✅ **Ajustes post prueba de campo (v1.0.1)** — tres iteraciones derivadas del uso real, **sin cambios de base de datos** (no hay migración; `inventario.db` y el respaldo no se ven afectados): (1) módulo de ajuste de inventario con stock actual visible, cantidad editable, soporte de valores negativos y vista previa del stock resultante; (2) catálogo con orden por stock y precio (asc/desc), filtro de "stock bajo" e indicador visual de stock agotado/bajo; (3) alta de producto sin código (granel) accesible desde la pantalla de carga inicial. Se subió `version` a `1.0.1`. Detalle por iteración en [docs/ajustes-prueba-campo.md](docs/ajustes-prueba-campo.md).
+✅ **Ajustes post prueba de campo (iteraciones 1–11)** — derivados del uso real, **ninguno cambia el esquema de la base** (sin migración; `inventario.db` y el respaldo no se afectan). Detalle por iteración en [docs/ajustes-prueba-campo.md](docs/ajustes-prueba-campo.md). Resumen por área:
+> - **Ajuste de inventario** (1): stock actual visible, cantidad editable, valores negativos y vista previa del stock resultante.
+> - **Catálogo** (2, 9): orden por stock/precio (asc/desc), filtro "stock bajo", indicador visual de agotado/bajo y filtro "Inactivos".
+> - **Carga inicial** (3): alta de producto sin código (granel) desde el escáner.
+> - **UX de inputs** (1, 6): `selectTextOnFocus` (no hay que borrar el "0"); en compra el costo precarga el costo guardado o, si no hay, el precio de venta como referencia editable.
+> - **Búsqueda** (4): insensible a acentos (NFC/NFD) en catálogo, ventas/compras e historial.
+> - **Sesión de venta/compra/ajuste** (5, 10, 11): el último producto va arriba de la lista; tope de stock en ventas (botón + desactivado, aviso al escanear de más); resaltado temporal del último agregado.
+> - **Reportes** (7): sección "Ventas del día" con selector de fecha (flechas + calendario nativo).
+> - **Historial** (8): vista limitada al día seleccionado con el mismo selector.
+> - **Ficha de producto** (9): reasignar código, convertir a sin código y desactivar/reactivar (estrategia "retirar + crear", sin borrado físico, respaldo coherente).
+>
+> **Builds:** `v1.0.1` (iteraciones 1–3), `v1.0.2` (1–8). Las iteraciones **9–11 quedan para el próximo APK** (se mantiene `version = 1.0.2`). La única dependencia nativa nueva es `@react-native-community/datetimepicker` (iteración 7): su **calendario solo aparece en un APK nuevo**.
 
-🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen); validar en dispositivo los ajustes v1.0.1; y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
+🔎 **Hallazgos:**
+> - **Expo Go ≠ APK.** La base local de Expo Go es **distinta** a la del APK instalado; al probar módulos nuevos en Expo Go solo se ve la data que se haya restaurado de Firebase, no la del APK.
+> - **Simbologías de código de barras.** El escáner hoy lee solo **EAN-13/EAN-8/UPC-A/UPC-E** ([components/ScannerView.tsx](components/ScannerView.tsx)). Productos con Code-128/Code-39/ITF o con códigos de **peso/precio variable** no leen de forma fiable → conviene tratarlos como "sin código" (operar por nombre) o, a futuro, ampliar las simbologías soportadas.
+
+🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen); validar en dispositivo los ajustes 1–11; evaluar ampliar simbologías del escáner; y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
 
 > Historial: la demo técnica de escaneo (validación de cámara + latencia API) está en [Demo técnica (completada)](#demo-técnica-completada). El diseño detallado del sistema sigue vigente más abajo.
 
