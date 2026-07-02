@@ -44,6 +44,10 @@ export default function HistorialScreen() {
   const [items, setItems] = useState<Transaccion[]>([]);
 
   const esHoy = dia === hoyStr();
+  const totalDia =
+    filtro === 'venta' || filtro === 'compra'
+      ? items.reduce((acc, t) => acc + t.total, 0)
+      : 0;
 
   // Solo las operaciones del día seleccionado (recarga al cambiar día/tipo y al
   // volver a la pantalla).
@@ -121,6 +125,27 @@ export default function HistorialScreen() {
           );
         })}
       </View>
+
+      {(filtro === 'venta' || filtro === 'compra') && (
+        <View
+          style={[
+            styles.totalBar,
+            filtro === 'compra' && styles.totalBarCompra,
+          ]}
+        >
+          <Text style={styles.totalBarLabel}>
+            {filtro === 'venta' ? 'Total ventas del día' : 'Total compras del día'}
+          </Text>
+          <Text
+            style={[
+              styles.totalBarValue,
+              filtro === 'compra' && styles.totalBarValueCompra,
+            ]}
+          >
+            {formatCOP(totalDia)}
+          </Text>
+        </View>
+      )}
 
       <FlatList
         data={items}
@@ -207,6 +232,20 @@ const styles = StyleSheet.create({
   },
   hoyBtnText: { fontSize: font.sm, color: colors.primary, fontWeight: '700' },
   filtros: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  totalBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.venta + '14',
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  totalBarCompra: { backgroundColor: colors.compra + '14' },
+  totalBarLabel: { fontSize: font.sm, fontWeight: '700', color: colors.text },
+  totalBarValue: { fontSize: font.lg, fontWeight: '800', color: colors.venta },
+  totalBarValueCompra: { color: colors.compra },
   chip: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,

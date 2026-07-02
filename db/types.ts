@@ -54,6 +54,10 @@ export type LineaBorrador = {
   // Solo UI (ajuste de inventario): stock vigente al agregar el producto, para
   // mostrar "stock actual" y "stock resultante". No se persiste.
   stock_actual?: number;
-  // Solo UI (compra): precio de venta vigente, como referencia al fijar el costo.
-  precio_venta?: number;
+  // Solo UI (compra): margen propio del producto, para recalcular el precio
+  // sugerido en vivo sin volver a consultar la base.
+  margen_pct_snapshot?: number | null;
+  // Solo UI (compra): precio de venta sugerido/confirmado, editable para
+  // redondear. Se persiste como el nuevo precio del producto al finalizar.
+  precio_venta_snapshot?: number;
 };

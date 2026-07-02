@@ -85,7 +85,10 @@ export default function NuevoProductoScreen() {
       barcode: codigoFinal,
       nombre: nombre.trim(),
       sin_codigo: sinCodigo,
-      modo_precio: modoPrecio,
+      // El modo elegido acá solo decide qué campo se muestra en el alta (precio
+      // calculado con margen o tipeado a mano); a partir de la primera compra,
+      // todo producto opera con margen — no queda un modo permanente grabado.
+      modo_precio: 'margen',
       costo: costoNum,
       margen_pct: margen ? Number(margen) : null,
       precio: precioFinal,

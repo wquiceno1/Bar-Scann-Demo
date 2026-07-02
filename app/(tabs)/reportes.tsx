@@ -1,26 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import {
-  Dimensions,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { LineChart } from 'react-native-chart-kit';
 import { Card, Screen } from '../../components/ui';
 import {
   resumenVentasDia,
-  serieDiaria,
   totalPorTipo,
   utilidadPeriodo,
   valorInventario,
   type ResumenDia,
-  type SerieDia,
 } from '../../db/reportes';
 import { formatCOP } from '../../db/util';
 import {
@@ -30,36 +20,48 @@ import {
   hoyStr,
   sumarDias,
 } from '../../lib/fecha';
-import { colors, font, radius, spacing } from '../../theme/tokens';
+import { colors, font, spacing } from '../../theme/tokens';
 
-function rangoMesActual(): { desde: string; hasta: string } {
+/** Rango del mes en `offset` meses respecto al actual (0 = mes actual). */
+function rangoMes(offset: number): { desde: string; hasta: string } {
   const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + offset);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   return { desde: `${y}-${m}-01T00:00:00`, hasta: `${y}-${m}-31T23:59:59` };
 }
 
-type Datos = {
-  alCosto: number;
-  alPrecio: number;
+/** Etiqueta legible del mes en `offset` meses respecto al actual: "Julio 2026". */
+function labelMes(offset: number): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + offset);
+  const texto = d.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' });
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+type DatosMes = {
   ventas: number;
   compras: number;
   utilidad: number;
-  serie: SerieDia[];
 };
+
+type Inventario = { alCosto: number; alPrecio: number };
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
-const chartWidth = Dimensions.get('window').width - spacing.lg * 2;
-
 export default function ReportesScreen() {
   const db = useSQLiteContext();
-  const [d, setD] = useState<Datos | null>(null);
+  const [d, setD] = useState<DatosMes | null>(null);
+  const [inv, setInv] = useState<Inventario | null>(null);
   const [dia, setDia] = useState(hoyStr());
   const [resumen, setResumen] = useState<ResumenDia | null>(null);
   const [mostrarPicker, setMostrarPicker] = useState(false);
+  const [mesOffset, setMesOffset] = useState(0);
 
   const esHoy = dia === hoyStr();
+  const esMesActual = mesOffset === 0;
 
   // Resumen del día seleccionado: recarga al cambiar la fecha y al volver a la
   // pantalla (p. ej. tras registrar una venta).
@@ -69,29 +71,26 @@ export default function ReportesScreen() {
     }, [db, dia])
   );
 
+  // Valor de inventario: es una foto del stock actual, no depende del mes
+  // seleccionado — se recarga solo al volver a la pantalla.
   useFocusEffect(
     useCallback(() => {
-      const { desde, hasta } = rangoMesActual();
-      Promise.all([
-        valorInventario(db),
-        totalPorTipo(db, 'venta', desde, hasta),
-        totalPorTipo(db, 'compra', desde, hasta),
-        utilidadPeriodo(db, desde, hasta),
-        serieDiaria(db, 'venta', desde, hasta),
-      ]).then(([inv, ventas, compras, util, serie]) =>
-        setD({
-          alCosto: inv.alCosto,
-          alPrecio: inv.alPrecio,
-          ventas,
-          compras,
-          utilidad: util.utilidad,
-          serie,
-        })
-      );
+      valorInventario(db).then(setInv);
     }, [db])
   );
 
-  const serie = d?.serie ?? [];
+  useFocusEffect(
+    useCallback(() => {
+      const { desde, hasta } = rangoMes(mesOffset);
+      Promise.all([
+        totalPorTipo(db, 'venta', desde, hasta),
+        totalPorTipo(db, 'compra', desde, hasta),
+        utilidadPeriodo(db, desde, hasta),
+      ]).then(([ventas, compras, util]) =>
+        setD({ ventas, compras, utilidad: util.utilidad })
+      );
+    }, [db, mesOffset])
+  );
 
   return (
     <Screen>
@@ -140,18 +139,6 @@ export default function ReportesScreen() {
           big
         />
         <Kpi
-          icon="receipt-outline"
-          label="N° de ventas"
-          value={resumen?.numVentas}
-          conteo
-        />
-        <Kpi
-          icon="cube-outline"
-          label="Unidades vendidas"
-          value={resumen?.unidades}
-          conteo
-        />
-        <Kpi
           icon="trending-up"
           label="Utilidad del día"
           value={resumen?.utilidad}
@@ -172,41 +159,42 @@ export default function ReportesScreen() {
           />
         )}
 
-        <Text style={styles.section}>Ventas por día (este mes)</Text>
-        <Card style={styles.chartCard}>
-          {serie.length > 0 ? (
-            <LineChart
-              data={{
-                labels: serie.map((s) => s.dia.slice(8, 10)),
-                datasets: [{ data: serie.map((s) => s.total) }],
-              }}
-              width={chartWidth - spacing.lg * 2}
-              height={200}
-              yAxisLabel="$"
-              formatYLabel={(v) => abreviar(Number(v))}
-              chartConfig={CHART_CONFIG}
-              bezier
-              style={{ borderRadius: radius.md }}
-            />
-          ) : (
-            <View style={styles.chartEmpty}>
-              <Ionicons name="bar-chart-outline" size={36} color={colors.textMuted} />
-              <Text style={styles.chartEmptyText}>
-                Aún no hay ventas este mes.
-              </Text>
-            </View>
-          )}
-        </Card>
-
         <Text style={styles.section}>Inventario actual</Text>
-        <Kpi icon="cube" label="Valor al costo (inversión)" value={d?.alCosto} />
+        <Kpi icon="cube" label="Valor al costo (inversión)" value={inv?.alCosto} />
         <Kpi
           icon="pricetag"
           label="Valor al precio de venta"
-          value={d?.alPrecio}
+          value={inv?.alPrecio}
         />
 
-        <Text style={styles.section}>Este mes</Text>
+        <Text style={styles.section}>Ventas por mes</Text>
+        <Card style={styles.diaCard}>
+          <View style={styles.diaNav}>
+            <Pressable
+              onPress={() => setMesOffset((x) => x - 1)}
+              hitSlop={8}
+              style={styles.navBtn}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </Pressable>
+            <Text style={styles.diaFecha}>{labelMes(mesOffset)}</Text>
+            <Pressable
+              onPress={() => setMesOffset((x) => x + 1)}
+              disabled={esMesActual}
+              hitSlop={8}
+              style={[styles.navBtn, esMesActual && styles.navBtnOff]}
+            >
+              <Ionicons name="chevron-forward" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          {!esMesActual && (
+            <Pressable onPress={() => setMesOffset(0)} style={styles.hoyBtn}>
+              <Ionicons name="today-outline" size={14} color={colors.primary} />
+              <Text style={styles.hoyBtnText}>Volver a este mes</Text>
+            </Pressable>
+          )}
+        </Card>
+
         <Kpi icon="cart" label="Ventas" value={d?.ventas} color={colors.venta} />
         <Kpi
           icon="download"
@@ -226,36 +214,18 @@ export default function ReportesScreen() {
   );
 }
 
-/** Abrevia montos grandes para los ejes (12500 → '12k'). */
-function abreviar(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return (v / 1_000_000).toFixed(1) + 'M';
-  if (Math.abs(v) >= 1_000) return Math.round(v / 1_000) + 'k';
-  return String(Math.round(v));
-}
-
-const CHART_CONFIG = {
-  backgroundGradientFrom: colors.surface,
-  backgroundGradientTo: colors.surface,
-  decimalPlaces: 0,
-  color: (o = 1) => `rgba(37, 99, 235, ${o})`, // primary
-  labelColor: () => colors.textMuted,
-  propsForDots: { r: '3', strokeWidth: '1', stroke: colors.primary },
-};
-
 function Kpi({
   icon,
   label,
   value,
   color = colors.text,
   big = false,
-  conteo = false,
 }: {
   icon: IconName;
   label: string;
   value?: number;
   color?: string;
   big?: boolean;
-  conteo?: boolean;
 }) {
   return (
     <Card style={styles.kpi}>
@@ -265,7 +235,7 @@ function Kpi({
       <View style={{ flex: 1 }}>
         <Text style={styles.kpiLabel}>{label}</Text>
         <Text style={[styles.kpiValue, big && styles.kpiValueBig, { color }]}>
-          {value == null ? '—' : conteo ? String(value) : formatCOP(value)}
+          {value == null ? '—' : formatCOP(value)}
         </Text>
       </View>
     </Card>
@@ -320,9 +290,6 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   hoyBtnText: { fontSize: font.sm, color: colors.primary, fontWeight: '700' },
-  chartCard: { alignItems: 'center', paddingHorizontal: spacing.sm },
-  chartEmpty: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
-  chartEmptyText: { color: colors.textMuted, fontSize: font.sm },
   kpi: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   kpiIcon: {
     width: 44,

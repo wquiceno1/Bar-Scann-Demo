@@ -15,10 +15,11 @@ import { useSQLiteContext } from 'expo-sqlite';
 import BuscadorProducto from '../../components/BuscadorProducto';
 import ScannerView from '../../components/ScannerView';
 import { Button, Input } from '../../components/ui';
+import { getMargenGeneral } from '../../db/configuracion';
 import { getProducto } from '../../db/productos';
 import { finalizarTransaccion } from '../../db/transacciones';
 import type { LineaBorrador, Producto, TipoTransaccion } from '../../db/types';
-import { formatCOP } from '../../db/util';
+import { formatCOP, precioConMargen } from '../../db/util';
 import { toast } from '../../lib/feedback';
 import { colors, font, radius, shadow, spacing } from '../../theme/tokens';
 
@@ -47,6 +48,31 @@ export default function TransaccionScreen() {
   const [contraparte, setContraparte] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [buscadorVisible, setBuscadorVisible] = useState(false);
+  const [margenGeneral, setMargenGeneral] = useState<number | null>(null);
+
+  useEffect(() => {
+    getMargenGeneral(db).then(setMargenGeneral);
+  }, [db]);
+
+  // Si una línea de compra se agregó antes de que cargara el margen general,
+  // su precio sugerido pudo calcularse con 0% de margen (ver cambiarCosto/
+  // agregarProducto). Apenas el margen general llega, se recalcula esa línea.
+  useEffect(() => {
+    if (margenGeneral == null || tipo !== 'compra') return;
+    setLineas((prev) =>
+      prev.map((l) =>
+        l.margen_pct_snapshot == null && l.costo_snapshot != null
+          ? {
+              ...l,
+              precio_venta_snapshot: precioConMargen(
+                l.costo_snapshot,
+                margenGeneral
+              ),
+            }
+          : l
+      )
+    );
+  }, [margenGeneral, tipo]);
   // Texto crudo del input de cantidad en 'ajuste' mientras se escribe (permite
   // estados intermedios como "-" sin perderlos). Override efímero del número.
   const [cantTexto, setCantTexto] = useState<Record<string, string>>({});
@@ -86,6 +112,10 @@ export default function TransaccionScreen() {
             ? costoCompra
             : 0;
       const costoSnap = tipo === 'compra' ? costoCompra : prod.costo;
+      const precioVentaSugerido =
+        tipo === 'compra'
+          ? precioConMargen(costoCompra, prod.margen_pct ?? margenGeneral ?? 0)
+          : undefined;
 
       // En venta no se puede agregar más unidades de las que hay en stock.
       if (tipo === 'venta') {
@@ -134,13 +164,14 @@ export default function TransaccionScreen() {
             costo_snapshot: costoSnap,
             precio_unitario_snapshot: precioUnit,
             stock_actual: prod.stock_actual,
-            precio_venta: prod.precio,
+            margen_pct_snapshot: prod.margen_pct,
+            precio_venta_snapshot: precioVentaSugerido,
           },
           ...prev,
         ];
       });
     },
-    [tipo, lineas, resaltar]
+    [tipo, lineas, resaltar, margenGeneral]
   );
 
   const agregarPorCodigo = useCallback(
@@ -227,14 +258,34 @@ export default function TransaccionScreen() {
     setLineas((prev) => prev.filter((l) => l.barcode !== barcode));
   };
 
-  // En compras: editar el costo unitario que cobró el proveedor.
+  // En compras: editar el costo unitario que cobró el proveedor. El precio de
+  // venta sugerido se recalcula en vivo con el margen del producto (o el
+  // general si no tiene uno propio).
   const cambiarCosto = (barcode: string, texto: string) => {
     const n = Number(texto.replace(/[^\d]/g, '')) || 0;
     setLineas((prev) =>
       prev.map((l) =>
         l.barcode === barcode
-          ? { ...l, precio_unitario_snapshot: n, costo_snapshot: n }
+          ? {
+              ...l,
+              precio_unitario_snapshot: n,
+              costo_snapshot: n,
+              precio_venta_snapshot: precioConMargen(
+                n,
+                l.margen_pct_snapshot ?? margenGeneral ?? 0
+              ),
+            }
           : l
+      )
+    );
+  };
+
+  // En compras: redondear/ajustar a mano el precio de venta sugerido.
+  const cambiarPrecioVenta = (barcode: string, texto: string) => {
+    const n = Number(texto.replace(/[^\d]/g, '')) || 0;
+    setLineas((prev) =>
+      prev.map((l) =>
+        l.barcode === barcode ? { ...l, precio_venta_snapshot: n } : l
       )
     );
   };
@@ -251,6 +302,18 @@ export default function TransaccionScreen() {
           : 'Agrega al menos un producto.'
       );
       return;
+    }
+    if (tipo === 'compra') {
+      const sinPrecio = lineasValidas.find(
+        (l) => !l.precio_venta_snapshot || l.precio_venta_snapshot <= 0
+      );
+      if (sinPrecio) {
+        Alert.alert(
+          'Precio inválido',
+          `"${sinPrecio.nombre}" no tiene un precio de venta válido. Revisá el campo "Precio sugerido" antes de finalizar.`
+        );
+        return;
+      }
     }
     setGuardando(true);
     try {
@@ -431,9 +494,22 @@ export default function TransaccionScreen() {
                       placeholder="0"
                       placeholderTextColor={colors.textMuted}
                     />
-                    <Text style={styles.refVenta}>
-                      Venta: {formatCOP(item.precio_venta ?? 0)}
-                    </Text>
+                    <Text style={styles.refVentaLabel}>Precio sugerido</Text>
+                    <TextInput
+                      style={styles.precioVentaInput}
+                      keyboardType="numeric"
+                      selectTextOnFocus
+                      value={
+                        item.precio_venta_snapshot
+                          ? String(item.precio_venta_snapshot)
+                          : ''
+                      }
+                      onChangeText={(texto) =>
+                        cambiarPrecioVenta(item.barcode, texto)
+                      }
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                    />
                   </>
                 ) : (
                   <Text style={styles.colValue}>
@@ -627,7 +703,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     backgroundColor: colors.surfaceAlt,
   },
-  refVenta: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
+  refVentaLabel: {
+    fontSize: font.xs,
+    color: colors.textMuted,
+    marginTop: 6,
+  },
+  precioVentaInput: {
+    width: 100,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    fontSize: font.md,
+    color: colors.venta,
+    fontWeight: '700',
+    backgroundColor: colors.surfaceAlt,
+  },
   qtyBtn: {
     width: 34,
     height: 34,

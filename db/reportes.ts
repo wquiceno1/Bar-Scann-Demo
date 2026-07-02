@@ -33,8 +33,6 @@ export async function totalPorTipo(
 
 export type ResumenDia = {
   total: number; // COP vendidos en el día
-  numVentas: number; // cantidad de transacciones de venta
-  unidades: number; // unidades vendidas (suma de cantidades)
   utilidad: number; // ventas − costo de lo vendido en el día
 };
 
@@ -46,21 +44,16 @@ export async function resumenVentasDia(
   const desde = `${dia}T00:00:00`;
   const hasta = `${dia}T23:59:59`;
 
-  const cab = await db.getFirstAsync<{ total: number; numVentas: number }>(
-    `SELECT COALESCE(SUM(total), 0) AS total, COUNT(*) AS numVentas
+  const cab = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(total), 0) AS total
        FROM transacciones
       WHERE tipo = 'venta' AND fecha_hora >= ? AND fecha_hora <= ?`,
     desde,
     hasta
   );
 
-  const det = await db.getFirstAsync<{
-    unidades: number;
-    ingresos: number;
-    costo: number;
-  }>(
+  const det = await db.getFirstAsync<{ ingresos: number; costo: number }>(
     `SELECT
-       COALESCE(SUM(i.cantidad), 0)                                AS unidades,
        COALESCE(SUM(i.subtotal), 0)                                AS ingresos,
        COALESCE(SUM(i.cantidad * COALESCE(i.costo_snapshot, 0)), 0) AS costo
      FROM transaccion_items i
@@ -74,30 +67,8 @@ export async function resumenVentasDia(
   const costo = det?.costo ?? 0;
   return {
     total: cab?.total ?? 0,
-    numVentas: cab?.numVentas ?? 0,
-    unidades: det?.unidades ?? 0,
     utilidad: ingresos - costo,
   };
-}
-
-export type SerieDia = { dia: string; total: number };
-
-/** Serie diaria de totales para un tipo en un rango, para graficar. */
-export async function serieDiaria(
-  db: SQLiteDatabase,
-  tipo: 'venta' | 'compra',
-  desde: string,
-  hasta: string
-): Promise<SerieDia[]> {
-  return db.getAllAsync<SerieDia>(
-    `SELECT substr(fecha_hora, 1, 10) AS dia, COALESCE(SUM(total), 0) AS total
-       FROM transacciones
-      WHERE tipo = ? AND fecha_hora >= ? AND fecha_hora <= ?
-      GROUP BY dia ORDER BY dia`,
-    tipo,
-    desde,
-    hasta
-  );
 }
 
 /**
