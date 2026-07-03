@@ -67,20 +67,6 @@ export default function OperarScreen() {
           color={colors.ajuste}
         />
       </View>
-
-      <Pressable
-        onPress={() => router.push('/carga-inicial')}
-        style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-      >
-        <Ionicons name="scan" size={20} color={colors.primary} />
-        <View style={styles.actionBody}>
-          <Text style={styles.secondaryLabel}>Carga inicial del catálogo</Text>
-          <Text style={styles.actionDesc}>
-            Escanea toda la tienda para empezar
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.primary} />
-      </Pressable>
     </Screen>
   );
 }
@@ -114,16 +100,4 @@ const styles = StyleSheet.create({
   actionBody: { flex: 1, flexShrink: 1 },
   actionLabel: { fontSize: font.lg, fontWeight: '700', color: colors.text },
   actionDesc: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
-  secondary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    marginTop: spacing.xl,
-  },
-  secondaryLabel: { fontSize: font.md, fontWeight: '700', color: colors.primary },
 });

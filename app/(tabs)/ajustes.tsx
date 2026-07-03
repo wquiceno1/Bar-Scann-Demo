@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { User } from 'firebase/auth';
 import { Button, Card, Input, Screen } from '../../components/ui';
@@ -48,6 +48,7 @@ function mensajeError(e: unknown): string {
 
 export default function AjustesScreen() {
   const db = useSQLiteContext();
+  const router = useRouter();
   const [margen, setMargen] = useState('');
 
   // --- Respaldo ---
@@ -283,6 +284,23 @@ export default function AjustesScreen() {
           onChangeText={setMargen}
         />
         <Button label="Guardar" icon="save" onPress={guardarMargen} />
+      </Card>
+
+      <Card style={[styles.respaldo, { gap: spacing.sm }]}>
+        <View style={styles.head}>
+          <Ionicons name="scan-outline" size={20} color={colors.primary} />
+          <Text style={styles.title}>Carga inicial del catálogo</Text>
+        </View>
+        <Text style={styles.help}>
+          Escanea toda la tienda para dar de alta los productos de una sola vez.
+          Pensado para el primer arranque.
+        </Text>
+        <Button
+          label="Iniciar carga"
+          icon="scan"
+          variant="secondary"
+          onPress={() => router.push('/carga-inicial')}
+        />
       </Card>
 
       <Card style={[styles.respaldo, { gap: spacing.sm }]}>
