@@ -16,7 +16,7 @@ import BuscadorProducto from '../../components/BuscadorProducto';
 import ScannerView from '../../components/ScannerView';
 import { Button, Input } from '../../components/ui';
 import { getMargenGeneral } from '../../db/configuracion';
-import { getProducto } from '../../db/productos';
+import { getProducto, reactivarProducto } from '../../db/productos';
 import { finalizarTransaccion } from '../../db/transacciones';
 import type { LineaBorrador, Producto, TipoTransaccion } from '../../db/types';
 import { formatCOP, precioConMargen } from '../../db/util';
@@ -186,6 +186,23 @@ export default function TransaccionScreen() {
             {
               text: 'Crear producto',
               onPress: () => router.push(`/producto/nuevo?barcode=${code}`),
+            },
+          ]
+        );
+        return;
+      }
+      if (prod.activo === 0) {
+        Alert.alert(
+          'Producto inactivo',
+          `${prod.nombre} está desactivado y oculto del catálogo. ¿Querés reactivarlo?`,
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+              text: 'Reactivar',
+              onPress: async () => {
+                await reactivarProducto(db, prod.barcode);
+                agregarProducto({ ...prod, activo: 1 });
+              },
             },
           ]
         );

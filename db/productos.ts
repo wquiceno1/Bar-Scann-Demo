@@ -47,10 +47,15 @@ export async function listarProductos(
 
   if (busqueda && busqueda.trim().length > 0) {
     const term = busqueda.trim();
-    // Nombre: comparación insensible a acentos (ambos lados normalizados).
-    // Código de barras: comparación directa (no tiene acentos).
-    where.push(`(${sqlNormalizar('nombre')} LIKE ? OR barcode LIKE ?)`);
-    params.push(`%${normalizarBusqueda(term)}%`, `%${term}%`);
+    // Nombre: cada palabra debe aparecer, en cualquier orden (insensible a
+    // acentos). Código de barras: comparación directa contra la frase completa.
+    const tokens = normalizarBusqueda(term).split(/\s+/).filter(Boolean);
+    const nombreConds = tokens
+      .map(() => `${sqlNormalizar('nombre')} LIKE ?`)
+      .join(' AND ');
+    where.push(`((${nombreConds}) OR barcode LIKE ?)`);
+    for (const t of tokens) params.push(`%${t}%`);
+    params.push(`%${term}%`);
   }
   if (soloStockBajo) {
     where.push('stock_actual <= ?');
