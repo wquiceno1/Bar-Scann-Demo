@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import ScannerView from '../../components/ScannerView';
 import { EmptyState, Input, Screen } from '../../components/ui';
 import {
   listarProductos,
@@ -23,6 +24,7 @@ export default function CatalogoScreen() {
   const [soloStockBajo, setSoloStockBajo] = useState(false);
   const [soloInactivos, setSoloInactivos] = useState(false);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [scannerVisible, setScannerVisible] = useState(false);
 
   const cargar = useCallback(
     (
@@ -82,17 +84,64 @@ export default function CatalogoScreen() {
     cargar(busqueda, { orden, dir, soloStockBajo, soloInactivos: next });
   };
 
+  const buscarPorCodigo = (code: string) => {
+    setScannerVisible(false);
+    setBusqueda(code);
+    cargar(code, { orden, dir, soloStockBajo, soloInactivos });
+  };
+
   return (
     <Screen padded>
-      <Input
-        placeholder="Buscar por nombre o código…"
-        value={busqueda}
-        onChangeText={(t) => {
-          setBusqueda(t);
-          cargar(t, { orden, dir, soloStockBajo, soloInactivos });
-        }}
-        style={styles.search}
-      />
+      <View style={styles.searchRow}>
+        <View style={styles.searchInput}>
+          <Input
+            placeholder="Buscar por nombre o código…"
+            value={busqueda}
+            onChangeText={(t) => {
+              setBusqueda(t);
+              cargar(t, { orden, dir, soloStockBajo, soloInactivos });
+            }}
+          />
+        </View>
+        {busqueda.length > 0 && (
+          <Pressable
+            onPress={() => {
+              setBusqueda('');
+              cargar('', { orden, dir, soloStockBajo, soloInactivos });
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.clearBtn, pressed && styles.pressed]}
+          >
+            <Ionicons name="close" size={20} color={colors.textMuted} />
+          </Pressable>
+        )}
+        <Pressable
+          onPress={() => setScannerVisible(true)}
+          style={({ pressed }) => [styles.scanButton, pressed && styles.pressed]}
+        >
+          <Ionicons name="scan-outline" size={22} color={colors.textInverse} />
+        </Pressable>
+      </View>
+
+      <Modal
+        visible={scannerVisible}
+        animationType="slide"
+        onRequestClose={() => setScannerVisible(false)}
+      >
+        <View style={styles.scannerModal}>
+          <ScannerView onScan={buscarPorCodigo} />
+          <View style={styles.scanHint}>
+            <Ionicons name="scan-outline" size={16} color={colors.textInverse} />
+            <Text style={styles.scanHintText}>Apunta al código de barras</Text>
+          </View>
+          <Pressable
+            onPress={() => setScannerVisible(false)}
+            style={({ pressed }) => [styles.scanClose, pressed && styles.pressed]}
+          >
+            <Ionicons name="close" size={26} color={colors.textInverse} />
+          </Pressable>
+        </View>
+      </Modal>
 
       <View style={styles.sortRow}>
         <Text style={styles.sortLabel}>Ordenar</Text>
@@ -228,7 +277,54 @@ function SortChip({
 }
 
 const styles = StyleSheet.create({
-  search: { marginBottom: spacing.sm },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  searchInput: { flex: 1 },
+  clearBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerModal: { flex: 1, backgroundColor: '#000' },
+  scanHint: {
+    position: 'absolute',
+    bottom: spacing.xl,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+  },
+  scanHintText: { color: colors.textInverse, fontSize: font.sm, fontWeight: '600' },
+  scanClose: {
+    position: 'absolute',
+    top: spacing.xl,
+    right: spacing.lg,
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sortRow: {
     flexDirection: 'row',
     alignItems: 'center',
