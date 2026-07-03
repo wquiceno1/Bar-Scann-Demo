@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { EmptyState, Screen } from '../../components/ui';
+import ScannerView from '../../components/ScannerView';
+import { EmptyState, Input, Screen } from '../../components/ui';
 import { listarTransacciones } from '../../db/transacciones';
 import type { TipoTransaccion, Transaccion } from '../../db/types';
 import { formatCOP } from '../../db/util';
@@ -12,11 +13,22 @@ import {
   dateADiaStr,
   diaADate,
   fechaLarga,
+  hoyMesStr,
   hoyStr,
+  mesLargo,
   rangoDia,
+  rangoMes,
   sumarDias,
+  sumarMeses,
 } from '../../lib/fecha';
 import { colors, font, radius, shadow, spacing } from '../../theme/tokens';
+
+type Alcance = 'dia' | 'mes' | 'todo';
+const ALCANCES: { key: Alcance; label: string }[] = [
+  { key: 'dia', label: 'Día' },
+  { key: 'mes', label: 'Mes' },
+  { key: 'todo', label: 'Todo' },
+];
 
 const TIPOS: (TipoTransaccion | 'todos')[] = ['todos', 'venta', 'compra', 'ajuste'];
 const ETIQUETA: Record<TipoTransaccion, string> = {
@@ -39,74 +51,209 @@ export default function HistorialScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const [filtro, setFiltro] = useState<TipoTransaccion | 'todos'>('todos');
+  const [alcance, setAlcance] = useState<Alcance>('dia');
   const [dia, setDia] = useState(hoyStr());
+  const [mes, setMes] = useState(hoyMesStr());
   const [mostrarPicker, setMostrarPicker] = useState(false);
+  const [producto, setProducto] = useState('');
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [alcanceVisible, setAlcanceVisible] = useState(false);
   const [items, setItems] = useState<Transaccion[]>([]);
 
   const esHoy = dia === hoyStr();
-  const totalDia =
+  const esMesActual = mes === hoyMesStr();
+  // El selector de alcance solo importa cuando estás buscando. Es "pegajoso":
+  // aparece al enfocar el input o al escanear, y queda visible (aunque toques un
+  // chip o salgas del input) hasta que cierres la búsqueda con la X.
+  const mostrarAlcance = alcanceVisible || producto.trim().length > 0;
+
+  const cerrarBusqueda = () => {
+    setProducto('');
+    setAlcanceVisible(false);
+  };
+  const totalPeriodo =
     filtro === 'venta' || filtro === 'compra'
       ? items.reduce((acc, t) => acc + t.total, 0)
       : 0;
 
-  // Solo las operaciones del día seleccionado (recarga al cambiar día/tipo y al
-  // volver a la pantalla).
+  // Rango según el alcance elegido: día, mes o toda la historia (sin fecha).
+  const rango =
+    alcance === 'dia'
+      ? rangoDia(dia)
+      : alcance === 'mes'
+        ? rangoMes(mes)
+        : null;
+
+  // Recarga al cambiar alcance/período/tipo/producto y al volver a la pantalla.
   useFocusEffect(
     useCallback(() => {
-      const { desde, hasta } = rangoDia(dia);
       listarTransacciones(db, {
-        desde,
-        hasta,
+        ...(rango ?? {}),
         ...(filtro === 'todos' ? {} : { tipo: filtro }),
+        ...(producto.trim() ? { producto } : {}),
       }).then(setItems);
-    }, [db, filtro, dia])
+      // rango es derivado de alcance/dia/mes; se listan esas fuentes.
+    }, [db, filtro, alcance, dia, mes, producto])
   );
+
+  const buscarPorCodigo = (code: string) => {
+    setScannerVisible(false);
+    setAlcanceVisible(true);
+    setProducto(code);
+  };
 
   return (
     <Screen padded>
-      <View style={styles.diaNav}>
+      <View style={styles.searchRow}>
+        <View style={styles.searchInput}>
+          <Input
+            placeholder="Buscar por producto…"
+            value={producto}
+            onChangeText={setProducto}
+            onFocus={() => setAlcanceVisible(true)}
+          />
+        </View>
+        {mostrarAlcance && (
+          <Pressable
+            onPress={cerrarBusqueda}
+            hitSlop={8}
+            style={({ pressed }) => [styles.clearBtn, pressed && styles.pressed]}
+          >
+            <Ionicons name="close" size={20} color={colors.textMuted} />
+          </Pressable>
+        )}
         <Pressable
-          onPress={() => setDia((x) => sumarDias(x, -1))}
-          hitSlop={8}
-          style={styles.navBtn}
+          onPress={() => setScannerVisible(true)}
+          style={({ pressed }) => [styles.scanButton, pressed && styles.pressed]}
         >
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </Pressable>
-        <Pressable
-          onPress={() => setMostrarPicker(true)}
-          style={styles.diaFechaBtn}
-        >
-          <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-          <Text style={styles.diaFecha}>{esHoy ? 'Hoy' : fechaLarga(dia)}</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setDia((x) => sumarDias(x, 1))}
-          disabled={esHoy}
-          hitSlop={8}
-          style={[styles.navBtn, esHoy && styles.navBtnOff]}
-        >
-          <Ionicons name="chevron-forward" size={22} color={colors.text} />
+          <Ionicons name="scan-outline" size={22} color={colors.textInverse} />
         </Pressable>
       </View>
-      {!esHoy && (
-        <Pressable onPress={() => setDia(hoyStr())} style={styles.hoyBtn}>
-          <Ionicons name="today-outline" size={14} color={colors.primary} />
-          <Text style={styles.hoyBtnText}>Volver a hoy</Text>
-        </Pressable>
+
+      <Modal
+        visible={scannerVisible}
+        animationType="slide"
+        onRequestClose={() => setScannerVisible(false)}
+      >
+        <View style={styles.scannerModal}>
+          <ScannerView onScan={buscarPorCodigo} />
+          <View style={styles.scanHint}>
+            <Ionicons name="scan-outline" size={16} color={colors.textInverse} />
+            <Text style={styles.scanHintText}>Apunta al código de barras</Text>
+          </View>
+          <Pressable
+            onPress={() => setScannerVisible(false)}
+            style={({ pressed }) => [styles.scanClose, pressed && styles.pressed]}
+          >
+            <Ionicons name="close" size={26} color={colors.textInverse} />
+          </Pressable>
+        </View>
+      </Modal>
+
+      {mostrarAlcance && (
+        <View style={styles.alcanceRow}>
+          {ALCANCES.map(({ key, label }) => {
+            const on = alcance === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => setAlcance(key)}
+                style={[styles.alcanceChip, on && styles.alcanceChipOn]}
+              >
+                <Text
+                  style={[styles.alcanceText, on && styles.alcanceTextOn]}
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       )}
 
-      {mostrarPicker && (
-        <DateTimePicker
-          value={diaADate(dia)}
-          mode="date"
-          maximumDate={new Date()}
-          onChange={(event, selected) => {
-            setMostrarPicker(false);
-            if (event.type === 'set' && selected) {
-              setDia(dateADiaStr(selected));
-            }
-          }}
-        />
+      {alcance === 'dia' && (
+        <>
+          <View style={styles.diaNav}>
+            <Pressable
+              onPress={() => setDia((x) => sumarDias(x, -1))}
+              hitSlop={8}
+              style={styles.navBtn}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </Pressable>
+            <Pressable
+              onPress={() => setMostrarPicker(true)}
+              style={styles.diaFechaBtn}
+            >
+              <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+              <Text style={styles.diaFecha}>
+                {esHoy ? 'Hoy' : fechaLarga(dia)}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setDia((x) => sumarDias(x, 1))}
+              disabled={esHoy}
+              hitSlop={8}
+              style={[styles.navBtn, esHoy && styles.navBtnOff]}
+            >
+              <Ionicons name="chevron-forward" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          {!esHoy && (
+            <Pressable onPress={() => setDia(hoyStr())} style={styles.hoyBtn}>
+              <Ionicons name="today-outline" size={14} color={colors.primary} />
+              <Text style={styles.hoyBtnText}>Volver a hoy</Text>
+            </Pressable>
+          )}
+          {mostrarPicker && (
+            <DateTimePicker
+              value={diaADate(dia)}
+              mode="date"
+              maximumDate={new Date()}
+              onChange={(event, selected) => {
+                setMostrarPicker(false);
+                if (event.type === 'set' && selected) {
+                  setDia(dateADiaStr(selected));
+                }
+              }}
+            />
+          )}
+        </>
+      )}
+
+      {alcance === 'mes' && (
+        <>
+          <View style={styles.diaNav}>
+            <Pressable
+              onPress={() => setMes((x) => sumarMeses(x, -1))}
+              hitSlop={8}
+              style={styles.navBtn}
+            >
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </Pressable>
+            <View style={styles.diaFechaBtn}>
+              <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+              <Text style={styles.diaFecha}>{mesLargo(mes)}</Text>
+            </View>
+            <Pressable
+              onPress={() => setMes((x) => sumarMeses(x, 1))}
+              disabled={esMesActual}
+              hitSlop={8}
+              style={[styles.navBtn, esMesActual && styles.navBtnOff]}
+            >
+              <Ionicons name="chevron-forward" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          {!esMesActual && (
+            <Pressable
+              onPress={() => setMes(hoyMesStr())}
+              style={styles.hoyBtn}
+            >
+              <Ionicons name="today-outline" size={14} color={colors.primary} />
+              <Text style={styles.hoyBtnText}>Volver a este mes</Text>
+            </Pressable>
+          )}
+        </>
       )}
 
       <View style={styles.filtros}>
@@ -134,7 +281,9 @@ export default function HistorialScreen() {
           ]}
         >
           <Text style={styles.totalBarLabel}>
-            {filtro === 'venta' ? 'Total ventas del día' : 'Total compras del día'}
+            {`Total ${filtro === 'venta' ? 'ventas' : 'compras'} ${
+              alcance === 'dia' ? 'del día' : alcance === 'mes' ? 'del mes' : 'histórico'
+            }`}
           </Text>
           <Text
             style={[
@@ -142,7 +291,7 @@ export default function HistorialScreen() {
               filtro === 'compra' && styles.totalBarValueCompra,
             ]}
           >
-            {formatCOP(totalDia)}
+            {formatCOP(totalPeriodo)}
           </Text>
         </View>
       )}
@@ -154,11 +303,15 @@ export default function HistorialScreen() {
         ListEmptyComponent={
           <EmptyState
             icon="time-outline"
-            title="Sin operaciones este día"
+            title={
+              producto.trim()
+                ? 'Sin resultados para ese producto'
+                : 'Sin operaciones en el período'
+            }
             subtitle={
-              esHoy
-                ? 'Las ventas, compras y ajustes de hoy aparecerán aquí.'
-                : 'No hay operaciones registradas en la fecha seleccionada.'
+              producto.trim()
+                ? 'Ninguna operación de este período incluye ese producto. Probá ampliar el alcance a Mes o Todo.'
+                : 'Las ventas, compras y ajustes del período elegido aparecerán aquí.'
             }
           />
         }
@@ -192,6 +345,78 @@ export default function HistorialScreen() {
 }
 
 const styles = StyleSheet.create({
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  searchInput: { flex: 1 },
+  clearBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scannerModal: { flex: 1, backgroundColor: '#000' },
+  scanHint: {
+    position: 'absolute',
+    bottom: spacing.xl,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+  },
+  scanHintText: {
+    color: colors.textInverse,
+    fontSize: font.sm,
+    fontWeight: '600',
+  },
+  scanClose: {
+    position: 'absolute',
+    top: spacing.xl,
+    right: spacing.lg,
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alcanceRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  alcanceChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  alcanceChipOn: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  alcanceText: { fontSize: font.sm, fontWeight: '700', color: colors.textMuted },
+  alcanceTextOn: { color: colors.textInverse },
   diaNav: {
     flexDirection: 'row',
     alignItems: 'center',

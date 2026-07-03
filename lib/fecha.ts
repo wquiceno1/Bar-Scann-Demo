@@ -40,3 +40,37 @@ export function fechaLarga(dia: string): string {
 export function rangoDia(dia: string): { desde: string; hasta: string } {
   return { desde: `${dia}T00:00:00`, hasta: `${dia}T23:59:59` };
 }
+
+// --- Mes: cadenas 'YYYY-MM' en hora local. ---
+
+/** Mes actual como 'YYYY-MM' local. */
+export function hoyMesStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+/** Suma (o resta) meses a un mes 'YYYY-MM'. */
+export function sumarMeses(mes: string, delta: number): string {
+  const [y, m] = mes.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+/** Etiqueta legible: "julio 2026". */
+export function mesLargo(mes: string): string {
+  const [y, m] = mes.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('es-CO', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/** Límites ISO [desde, hasta] que cubren todo el mes indicado ('YYYY-MM'). */
+export function rangoMes(mes: string): { desde: string; hasta: string } {
+  const [y, m] = mes.split('-').map(Number);
+  const ultimoDia = new Date(y, m, 0).getDate(); // día 0 del mes siguiente
+  return {
+    desde: `${mes}-01T00:00:00`,
+    hasta: `${mes}-${pad2(ultimoDia)}T23:59:59`,
+  };
+}

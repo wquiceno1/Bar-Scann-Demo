@@ -104,6 +104,10 @@ export type FiltroHistorial = {
   desde?: string; // ISO
   hasta?: string; // ISO
   contraparte?: string;
+  // Producto: texto (nombre) o código escaneado. Empareja transacciones que
+  // tengan al menos una línea con ese producto, por barcode exacto (scan) o por
+  // nombre_snapshot con LIKE tokenizado (texto, palabras en cualquier orden).
+  producto?: string;
 };
 
 export async function listarTransacciones(
@@ -127,6 +131,23 @@ export async function listarTransacciones(
   if (filtro.contraparte) {
     where.push(`${sqlNormalizar('cliente_proveedor')} LIKE ?`);
     params.push(`%${normalizarBusqueda(filtro.contraparte)}%`);
+  }
+  if (filtro.producto && filtro.producto.trim().length > 0) {
+    const term = filtro.producto.trim();
+    // barcode exacto (scan) OR cada palabra del nombre presente (texto).
+    const tokens = normalizarBusqueda(term).split(/\s+/).filter(Boolean);
+    const nombreConds = tokens
+      .map(() => `${sqlNormalizar('ti.nombre_snapshot')} LIKE ?`)
+      .join(' AND ');
+    where.push(
+      `EXISTS (
+         SELECT 1 FROM transaccion_items ti
+         WHERE ti.transaccion_id = transacciones.id
+           AND (ti.barcode = ? OR (${nombreConds}))
+       )`
+    );
+    params.push(term);
+    for (const t of tokens) params.push(`%${t}%`);
   }
   const sql =
     'SELECT * FROM transacciones' +
