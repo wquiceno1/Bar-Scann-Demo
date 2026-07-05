@@ -32,11 +32,20 @@ export async function totalPorTipo(
 }
 
 export type ResumenDia = {
-  total: number; // COP vendidos en el día
-  utilidad: number; // ventas − costo de lo vendido en el día
+  total: number; // COP vendidos en el día (todas las ventas)
+  utilidad: number; // solo sobre líneas con costo conocido (ver cobertura)
+  cobertura: number; // 0..1: fracción del monto vendido con costo conocido
 };
 
-/** Resumen de ventas de un día concreto ('YYYY-MM-DD'). Ignora compras/ajustes. */
+/**
+ * Resumen de ventas de un día concreto ('YYYY-MM-DD'). Ignora compras/ajustes.
+ *
+ * La utilidad se calcula SOLO sobre las líneas con `costo_snapshot` conocido:
+ * un producto sin costo (null) no es un producto gratis, así que contarlo como
+ * costo 0 inflaría la utilidad. `cobertura` indica qué parte del monto vendido
+ * sí tiene costo, para que el número sea interpretable. El costo se va llenando
+ * a medida que los productos se reponen (compras).
+ */
 export async function resumenVentasDia(
   db: SQLiteDatabase,
   dia: string
@@ -52,10 +61,17 @@ export async function resumenVentasDia(
     hasta
   );
 
-  const det = await db.getFirstAsync<{ ingresos: number; costo: number }>(
+  const det = await db.getFirstAsync<{
+    ingresos: number;
+    ingresosConCosto: number;
+    costo: number;
+  }>(
     `SELECT
-       COALESCE(SUM(i.subtotal), 0)                                AS ingresos,
-       COALESCE(SUM(i.cantidad * COALESCE(i.costo_snapshot, 0)), 0) AS costo
+       COALESCE(SUM(i.subtotal), 0) AS ingresos,
+       COALESCE(SUM(CASE WHEN i.costo_snapshot IS NOT NULL
+                         THEN i.subtotal ELSE 0 END), 0) AS ingresosConCosto,
+       COALESCE(SUM(CASE WHEN i.costo_snapshot IS NOT NULL
+                         THEN i.cantidad * i.costo_snapshot ELSE 0 END), 0) AS costo
      FROM transaccion_items i
      JOIN transacciones t ON t.id = i.transaccion_id
      WHERE t.tipo = 'venta' AND t.fecha_hora >= ? AND t.fecha_hora <= ?`,
@@ -64,26 +80,42 @@ export async function resumenVentasDia(
   );
 
   const ingresos = det?.ingresos ?? 0;
+  const ingresosConCosto = det?.ingresosConCosto ?? 0;
   const costo = det?.costo ?? 0;
   return {
     total: cab?.total ?? 0,
-    utilidad: ingresos - costo,
+    utilidad: ingresosConCosto - costo,
+    cobertura: ingresos > 0 ? ingresosConCosto / ingresos : 0,
   };
 }
 
 /**
- * Utilidad del período (ventas − costo de lo vendido), posible gracias al
- * snapshot de costo+precio en cada ítem de venta.
+ * Utilidad del período (ventas − costo de lo vendido). Igual que
+ * `resumenVentasDia`, solo considera las líneas con `costo_snapshot` conocido y
+ * reporta la `cobertura` (fracción del monto con costo) para que la utilidad no
+ * quede inflada por los productos sin costo cargado.
  */
 export async function utilidadPeriodo(
   db: SQLiteDatabase,
   desde: string,
   hasta: string
-): Promise<{ ingresos: number; costo: number; utilidad: number }> {
-  const row = await db.getFirstAsync<{ ingresos: number; costo: number }>(
+): Promise<{
+  ingresos: number;
+  costo: number;
+  utilidad: number;
+  cobertura: number;
+}> {
+  const row = await db.getFirstAsync<{
+    ingresos: number;
+    ingresosConCosto: number;
+    costo: number;
+  }>(
     `SELECT
-       COALESCE(SUM(i.subtotal), 0)                          AS ingresos,
-       COALESCE(SUM(i.cantidad * COALESCE(i.costo_snapshot, 0)), 0) AS costo
+       COALESCE(SUM(i.subtotal), 0) AS ingresos,
+       COALESCE(SUM(CASE WHEN i.costo_snapshot IS NOT NULL
+                         THEN i.subtotal ELSE 0 END), 0) AS ingresosConCosto,
+       COALESCE(SUM(CASE WHEN i.costo_snapshot IS NOT NULL
+                         THEN i.cantidad * i.costo_snapshot ELSE 0 END), 0) AS costo
      FROM transaccion_items i
      JOIN transacciones t ON t.id = i.transaccion_id
      WHERE t.tipo = 'venta' AND t.fecha_hora >= ? AND t.fecha_hora <= ?`,
@@ -91,8 +123,14 @@ export async function utilidadPeriodo(
     hasta
   );
   const ingresos = row?.ingresos ?? 0;
+  const ingresosConCosto = row?.ingresosConCosto ?? 0;
   const costo = row?.costo ?? 0;
-  return { ingresos, costo, utilidad: ingresos - costo };
+  return {
+    ingresos,
+    costo,
+    utilidad: ingresosConCosto - costo,
+    cobertura: ingresos > 0 ? ingresosConCosto / ingresos : 0,
+  };
 }
 
 export type FilaInventarioInicial = {

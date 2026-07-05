@@ -54,7 +54,21 @@ type DatosMes = {
   ventas: number;
   compras: number;
   utilidad: number;
+  cobertura: number;
 };
+
+/**
+ * Nota bajo la utilidad: aclara sobre qué parte de las ventas se pudo calcular
+ * (las que tienen costo conocido). Con cobertura total no hace falta aclarar.
+ */
+function coberturaTexto(cobertura?: number): string | undefined {
+  if (cobertura == null) return undefined;
+  const pct = Math.round(cobertura * 100);
+  if (pct >= 100) return undefined;
+  return pct === 0
+    ? 'Aún sin costo cargado en los productos vendidos'
+    : `Calculada sobre el ${pct}% de las ventas con costo conocido`;
+}
 
 type Inventario = { alCosto: number; alPrecio: number };
 
@@ -148,7 +162,12 @@ export default function ReportesScreen() {
         totalPorTipo(db, 'compra', desde, hasta),
         utilidadPeriodo(db, desde, hasta),
       ]).then(([ventas, compras, util]) =>
-        setD({ ventas, compras, utilidad: util.utilidad })
+        setD({
+          ventas,
+          compras,
+          utilidad: util.utilidad,
+          cobertura: util.cobertura,
+        })
       );
     }, [db, mesOffset])
   );
@@ -204,6 +223,7 @@ export default function ReportesScreen() {
           label="Utilidad del día"
           value={resumen?.utilidad}
           color={colors.venta}
+          caption={coberturaTexto(resumen?.cobertura)}
         />
 
         {mostrarPicker && (
@@ -221,10 +241,10 @@ export default function ReportesScreen() {
         )}
 
         <Text style={styles.section}>Inventario actual</Text>
-        <Kpi icon="cube" label="Valor al costo (inversión)" value={inv?.alCosto} />
+        <Kpi icon="cube" label="Total invertido" value={inv?.alCosto} />
         <Kpi
           icon="pricetag"
-          label="Valor al precio de venta"
+          label="Valor del inventario"
           value={inv?.alPrecio}
         />
 
@@ -269,6 +289,7 @@ export default function ReportesScreen() {
           value={d?.utilidad}
           color={colors.venta}
           big
+          caption={coberturaTexto(d?.cobertura)}
         />
 
         <Text style={styles.section}>Reportes imprimibles</Text>
@@ -316,12 +337,14 @@ function Kpi({
   value,
   color = colors.text,
   big = false,
+  caption,
 }: {
   icon: IconName;
   label: string;
   value?: number;
   color?: string;
   big?: boolean;
+  caption?: string;
 }) {
   return (
     <Card style={styles.kpi}>
@@ -333,6 +356,7 @@ function Kpi({
         <Text style={[styles.kpiValue, big && styles.kpiValueBig, { color }]}>
           {value == null ? '—' : formatCOP(value)}
         </Text>
+        {caption && <Text style={styles.kpiCaption}>{caption}</Text>}
       </View>
     </Card>
   );
@@ -396,6 +420,7 @@ const styles = StyleSheet.create({
   },
   pdfHelp: { fontSize: font.sm, color: colors.textMuted },
   kpiLabel: { fontSize: font.sm, color: colors.textMuted },
+  kpiCaption: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
   kpiValue: { fontSize: font.xl, fontWeight: '800', marginTop: 2 },
   kpiValueBig: { fontSize: font.xxl },
 });
