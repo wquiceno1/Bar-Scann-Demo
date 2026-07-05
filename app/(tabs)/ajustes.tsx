@@ -21,6 +21,7 @@ import {
   estadoRespaldo,
   marcarTodoPendienteRespaldo,
   respaldar,
+  restaurar,
   vaciarRespaldoRemoto,
 } from '../../lib/backup';
 import { vaciarDatosLocales } from '../../db/mantenimiento';
@@ -62,6 +63,7 @@ export default function AjustesScreen() {
   const [huellaConf, setHuellaConf] = useState(false);
   const [ultimo, setUltimo] = useState<string | null>(null);
   const [pendientes, setPendientes] = useState(0);
+  const [restaurando, setRestaurando] = useState(false);
   const [vaciando, setVaciando] = useState(false);
   const [vaciandoTodo, setVaciandoTodo] = useState(false);
   // Guarda la contraseña de la sesión actual para poder activar la huella
@@ -182,6 +184,31 @@ export default function AjustesScreen() {
               Alert.alert('No se pudo reconstruir', mensajeError(e));
             } finally {
               setReconstruyendo(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const restaurarDesdeNube = () => {
+    Alert.alert(
+      'Restaurar desde la nube',
+      'Descarga el respaldo de Firestore y reemplaza los datos locales. Los registros en el teléfono que no estén en la nube se conservan. ¿Continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Restaurar',
+          onPress: async () => {
+            setRestaurando(true);
+            try {
+              const n = await restaurar(db);
+              await refrescar();
+              toast(`Restauración completa (${n} registros)`);
+            } catch (e) {
+              Alert.alert('No se pudo restaurar', mensajeError(e));
+            } finally {
+              setRestaurando(false);
             }
           },
         },
@@ -337,6 +364,17 @@ export default function AjustesScreen() {
               variant="secondary"
               loading={reconstruyendo}
               onPress={reconstruirRespaldo}
+            />
+            <Text style={styles.help}>
+              Si se corrigieron datos directamente en la nube, usa este botón
+              para traer esos cambios al teléfono.
+            </Text>
+            <Button
+              label="Restaurar desde la nube"
+              icon="cloud-download"
+              variant="secondary"
+              loading={restaurando}
+              onPress={restaurarDesdeNube}
             />
             {huellaDisp &&
               (huellaConf ? (

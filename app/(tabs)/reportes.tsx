@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { Card, Screen } from '../../components/ui';
+import { Button, Card, Screen } from '../../components/ui';
 import {
+  inventarioInicial,
+  productosVendidos,
   resumenVentasDia,
   totalPorTipo,
   utilidadPeriodo,
@@ -14,10 +16,17 @@ import {
 } from '../../db/reportes';
 import { formatCOP } from '../../db/util';
 import {
+  compartirReportePdf,
+  reporteInventarioInicial,
+  reporteVentas,
+  type ReportePdf,
+} from '../../lib/reportePdf';
+import {
   dateADiaStr,
   diaADate,
   fechaLarga,
   hoyStr,
+  rangoDia,
   sumarDias,
 } from '../../lib/fecha';
 import { colors, font, spacing } from '../../theme/tokens';
@@ -59,9 +68,61 @@ export default function ReportesScreen() {
   const [resumen, setResumen] = useState<ResumenDia | null>(null);
   const [mostrarPicker, setMostrarPicker] = useState(false);
   const [mesOffset, setMesOffset] = useState(0);
+  const [pdfCargando, setPdfCargando] = useState<
+    null | 'inv' | 'histo' | 'dia' | 'mes'
+  >(null);
 
   const esHoy = dia === hoyStr();
   const esMesActual = mesOffset === 0;
+
+  // Genera un PDF y abre el diálogo nativo de compartir/imprimir. `construir`
+  // devuelve null cuando el reporte no tiene filas.
+  const generarPdf = async (
+    clave: NonNullable<typeof pdfCargando>,
+    construir: () => Promise<ReportePdf | null>
+  ) => {
+    setPdfCargando(clave);
+    try {
+      const reporte = await construir();
+      if (!reporte) {
+        Alert.alert('Sin datos', 'No hay información para este reporte todavía.');
+        return;
+      }
+      await compartirReportePdf(reporte);
+    } catch (e) {
+      Alert.alert(
+        'No se pudo generar el PDF',
+        (e as Error)?.message ?? 'Error desconocido.'
+      );
+    } finally {
+      setPdfCargando(null);
+    }
+  };
+
+  const pdfInventario = () =>
+    generarPdf('inv', async () => {
+      const { filas, total } = await inventarioInicial(db);
+      return filas.length ? reporteInventarioInicial(filas, total) : null;
+    });
+
+  const pdfVentasHistorico = () =>
+    generarPdf('histo', async () => {
+      const { filas, total } = await productosVendidos(db);
+      return filas.length ? reporteVentas(filas, total) : null;
+    });
+
+  const pdfVentasDia = () =>
+    generarPdf('dia', async () => {
+      const { filas, total } = await productosVendidos(db, rangoDia(dia));
+      const etiqueta = esHoy ? 'Hoy' : fechaLarga(dia);
+      return filas.length ? reporteVentas(filas, total, etiqueta) : null;
+    });
+
+  const pdfVentasMes = () =>
+    generarPdf('mes', async () => {
+      const { filas, total } = await productosVendidos(db, rangoMes(mesOffset));
+      return filas.length ? reporteVentas(filas, total, labelMes(mesOffset)) : null;
+    });
 
   // Resumen del día seleccionado: recarga al cambiar la fecha y al volver a la
   // pantalla (p. ej. tras registrar una venta).
@@ -209,6 +270,41 @@ export default function ReportesScreen() {
           color={colors.venta}
           big
         />
+
+        <Text style={styles.section}>Reportes imprimibles</Text>
+        <Card style={{ gap: spacing.sm }}>
+          <Text style={styles.pdfHelp}>
+            Genera un PDF para imprimir o compartir por WhatsApp, correo o Drive.
+          </Text>
+          <Button
+            label="Inventario inicial (PDF)"
+            icon="cube-outline"
+            variant="secondary"
+            loading={pdfCargando === 'inv'}
+            onPress={pdfInventario}
+          />
+          <Button
+            label="Ventas — histórico completo (PDF)"
+            icon="cart-outline"
+            variant="secondary"
+            loading={pdfCargando === 'histo'}
+            onPress={pdfVentasHistorico}
+          />
+          <Button
+            label={`Ventas del día (${esHoy ? 'Hoy' : fechaLarga(dia)})`}
+            icon="calendar-outline"
+            variant="secondary"
+            loading={pdfCargando === 'dia'}
+            onPress={pdfVentasDia}
+          />
+          <Button
+            label={`Ventas del mes (${labelMes(mesOffset)})`}
+            icon="calendar-number-outline"
+            variant="secondary"
+            loading={pdfCargando === 'mes'}
+            onPress={pdfVentasMes}
+          />
+        </Card>
       </ScrollView>
     </Screen>
   );
@@ -298,6 +394,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  pdfHelp: { fontSize: font.sm, color: colors.textMuted },
   kpiLabel: { fontSize: font.sm, color: colors.textMuted },
   kpiValue: { fontSize: font.xl, fontWeight: '800', marginTop: 2 },
   kpiValueBig: { fontSize: font.xxl },
