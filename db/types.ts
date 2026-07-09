@@ -1,6 +1,8 @@
 // Tipos del dominio. El dinero es SIEMPRE entero en pesos colombianos (COP).
 // Las fechas son strings ISO 8601 local: 'YYYY-MM-DDTHH:mm:ss'.
 
+import type { CategoriaSalida, SubcatDeduccion } from './salidas';
+
 export type TipoTransaccion = 'compra' | 'venta' | 'ajuste';
 export type ModoPrecio = 'margen' | 'fijo';
 
@@ -25,8 +27,11 @@ export type Transaccion = {
   tipo: TipoTransaccion;
   fecha_hora: string;
   cliente_proveedor: string | null;
-  motivo: string | null; // solo 'ajuste'
-  total: number; // COP, 0 en 'ajuste'
+  motivo: string | null; // 'ajuste': motivo/nota libre
+  // Salida sin venta (persiste como 'ajuste'): 'colegio' | 'deduccion' | null.
+  categoria: CategoriaSalida | null;
+  subcategoria: SubcatDeduccion | null; // solo deducción
+  total: number; // COP. 0 en ajuste de corrección; > 0 en salidas categorizadas
   created_at: string;
   updated_at: string;
   synced: number;

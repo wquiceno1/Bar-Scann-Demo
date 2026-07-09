@@ -253,3 +253,55 @@ export async function productosVendidos(
   });
   return { filas, total };
 }
+
+/**
+ * Salidas sin venta entregadas al colegio en un rango [desde, hasta] (ISO).
+ * Valorizadas a precio de venta (el `subtotal` guardado). No son ventas.
+ */
+export async function salidasColegio(
+  db: SQLiteDatabase,
+  rango: { desde: string; hasta: string }
+): Promise<{ unidades: number; total: number }> {
+  const row = await db.getFirstAsync<{ unidades: number; total: number }>(
+    `SELECT COALESCE(SUM(i.cantidad), 0)  AS unidades,
+            COALESCE(SUM(i.subtotal), 0)  AS total
+       FROM transaccion_items i
+       JOIN transacciones t ON t.id = i.transaccion_id
+      WHERE t.categoria = 'colegio'
+        AND t.fecha_hora >= ? AND t.fecha_hora <= ?`,
+    rango.desde,
+    rango.hasta
+  );
+  return { unidades: row?.unidades ?? 0, total: row?.total ?? 0 };
+}
+
+export type FilaDeduccion = {
+  subcategoria: string;
+  unidades: number;
+  total: number;
+};
+
+/**
+ * Deducciones (bajas internas) en un rango [desde, hasta] (ISO), desglosadas por
+ * subcategoría y ordenadas por valor. Valorizadas a precio de venta.
+ */
+export async function deducciones(
+  db: SQLiteDatabase,
+  rango: { desde: string; hasta: string }
+): Promise<{ filas: FilaDeduccion[]; total: number }> {
+  const filas = await db.getAllAsync<FilaDeduccion>(
+    `SELECT t.subcategoria             AS subcategoria,
+            COALESCE(SUM(i.cantidad), 0)  AS unidades,
+            COALESCE(SUM(i.subtotal), 0)  AS total
+       FROM transaccion_items i
+       JOIN transacciones t ON t.id = i.transaccion_id
+      WHERE t.categoria = 'deduccion'
+        AND t.fecha_hora >= ? AND t.fecha_hora <= ?
+      GROUP BY t.subcategoria
+      ORDER BY total DESC`,
+    rango.desde,
+    rango.hasta
+  );
+  const total = filas.reduce((acc, f) => acc + f.total, 0);
+  return { filas, total };
+}

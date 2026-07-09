@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DB_NAME = 'inventario.db';
-const TARGET_VERSION = 1;
+const TARGET_VERSION = 2;
 
 /**
  * Migraciones con el patrón PRAGMA user_version. Se ejecuta desde el `onInit`
@@ -30,7 +30,17 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     userVersion = 1;
   }
 
-  // if (userVersion < 2) { ... }  // futuras migraciones aditivas
+  if (userVersion < 2) {
+    // Salidas sin venta (colegio / deducciones): se persisten como 'ajuste'
+    // distinguidas por estas dos columnas. Aditivo: no rompe el espejo de
+    // respaldo (columnas nuevas, nullables).
+    await db.execAsync(
+      `ALTER TABLE transacciones ADD COLUMN categoria TEXT;
+       ALTER TABLE transacciones ADD COLUMN subcategoria TEXT;`
+    );
+    await db.execAsync(`PRAGMA user_version = 2`);
+    userVersion = 2;
+  }
 
   if (userVersion !== TARGET_VERSION) {
     console.warn(

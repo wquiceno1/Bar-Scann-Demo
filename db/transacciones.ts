@@ -5,19 +5,29 @@ import type {
   Transaccion,
   TransaccionItem,
 } from './types';
+import type { CategoriaSalida, SubcatDeduccion } from './salidas';
 import { newId, normalizarBusqueda, nowIso, sqlNormalizar } from './util';
 
 export type NuevaTransaccion = {
   tipo: TipoTransaccion;
   cliente_proveedor?: string | null;
   motivo?: string | null;
+  // Salida sin venta (colegio/deducción): se guarda como 'ajuste' pero con
+  // categoría; resta stock y su `total` es el valor de lo que salió.
+  categoria?: CategoriaSalida | null;
+  subcategoria?: SubcatDeduccion | null;
   lineas: LineaBorrador[];
 };
 
 /** Delta de stock que aplica una línea según el tipo de transacción. */
-function deltaStock(tipo: TipoTransaccion, cantidad: number): number {
+function deltaStock(
+  tipo: TipoTransaccion,
+  cantidad: number,
+  esSalida: boolean
+): number {
   if (tipo === 'venta') return -cantidad;
-  return cantidad; // compra (+) y ajuste (± según cantidad)
+  if (esSalida) return -cantidad; // salida categorizada: unidades positivas que restan
+  return cantidad; // compra (+) y ajuste de corrección (± según cantidad)
 }
 
 /**
@@ -30,8 +40,11 @@ export async function finalizarTransaccion(
 ): Promise<string> {
   const id = newId();
   const ts = nowIso();
-  const esAjuste = t.tipo === 'ajuste';
-  const total = esAjuste
+  // Salida categorizada (colegio/deducción): persiste como 'ajuste' pero, a
+  // diferencia del ajuste de corrección, sí lleva total (el valor de la salida).
+  const esSalida = t.categoria != null;
+  const esCorreccion = t.tipo === 'ajuste' && !esSalida;
+  const total = esCorreccion
     ? 0
     : t.lineas.reduce(
         (acc, l) => acc + l.cantidad * l.precio_unitario_snapshot,
@@ -41,14 +54,16 @@ export async function finalizarTransaccion(
   await db.withTransactionAsync(async () => {
     await db.runAsync(
       `INSERT INTO transacciones
-         (id, tipo, fecha_hora, cliente_proveedor, motivo, total,
-          created_at, updated_at, synced)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+         (id, tipo, fecha_hora, cliente_proveedor, motivo, categoria,
+          subcategoria, total, created_at, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
       id,
       t.tipo,
       ts,
       t.cliente_proveedor ?? null,
       t.motivo ?? null,
+      t.categoria ?? null,
+      t.subcategoria ?? null,
       total,
       ts,
       ts
@@ -74,7 +89,7 @@ export async function finalizarTransaccion(
         `UPDATE productos
            SET stock_actual = stock_actual + ?, updated_at = ?, synced = 0
          WHERE barcode = ?`,
-        deltaStock(t.tipo, l.cantidad),
+        deltaStock(t.tipo, l.cantidad, esSalida),
         ts,
         l.barcode
       );

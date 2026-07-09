@@ -25,6 +25,12 @@
 >
 > **Builds:** `v1.0.1` (iteraciones 1–3), `v1.0.2` (1–8). Las iteraciones **9–11 quedan para el próximo APK** (se mantiene `version = 1.0.2`). La única dependencia nativa nueva es `@react-native-community/datetimepicker` (iteración 7): su **calendario solo aparece en un APK nuevo**.
 
+✅ **Reportes, utilidad y salidas sin venta (v1.0.5)** — features agregadas sobre la 1.0.4:
+> - **Reportes imprimibles (PDF)** con `expo-print` + `expo-sharing`: inventario inicial (valorizado a precio de venta) y ventas realizadas (histórico y por período). Detalle en [PLAN-REPORTES-IMPRIMIBLES.md](PLAN-REPORTES-IMPRIMIBLES.md).
+> - **Utilidad corregida**: la utilidad del día/mes se calcula **solo sobre ventas con costo conocido** y muestra la cobertura %. Antes tomaba `costo = null` como 0 e inflaba el margen a casi 100%.
+> - **Salidas sin venta** (colegio y deducciones: aseo/uso interno, dañado en transporte, vencido, faltante): **restan stock pero no cuentan como venta**, valorizadas a precio de venta, con KPIs de cuadre mensual ("Entregado al colegio", "Deducciones"). Pantalla `app/salida.tsx` + tarjeta en inicio. Detalle en [PLAN-SALIDAS-SIN-VENTA.md](PLAN-SALIDAS-SIN-VENTA.md).
+> - **Primera migración de esquema (DB v2)**: se agregan `transacciones.categoria` y `transacciones.subcategoria` (aditiva, nullables → el espejo de respaldo sigue coherente). Esto **actualiza el supuesto previo** de "sin migración" de las iteraciones 1–11; las salidas se persisten como `tipo = 'ajuste'` distinguidas por estas columnas.
+
 🔎 **Hallazgos:**
 > - **Expo Go ≠ APK.** La base local de Expo Go es **distinta** a la del APK instalado; al probar módulos nuevos en Expo Go solo se ve la data que se haya restaurado de Firebase, no la del APK.
 > - **Simbologías de código de barras.** El escáner hoy lee solo **EAN-13/EAN-8/UPC-A/UPC-E** ([components/ScannerView.tsx](components/ScannerView.tsx)). Productos con Code-128/Code-39/ITF o con códigos de **peso/precio variable** no leen de forma fiable → conviene tratarlos como "sin código" (operar por nombre) o, a futuro, ampliar las simbologías soportadas.

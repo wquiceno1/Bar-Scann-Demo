@@ -66,6 +66,13 @@ export default function OperarScreen() {
           icon="construct"
           color={colors.ajuste}
         />
+        <Accion
+          onPress={() => router.push('/salida')}
+          label="Salida sin venta"
+          desc="Entrega al colegio o deducciones (aseo, vencidos…)"
+          icon="exit"
+          color={colors.salida}
+        />
       </View>
     </Screen>
   );

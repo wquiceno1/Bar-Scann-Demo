@@ -6,14 +6,18 @@ import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Button, Card, Screen } from '../../components/ui';
 import {
+  deducciones,
   inventarioInicial,
   productosVendidos,
   resumenVentasDia,
+  salidasColegio,
   totalPorTipo,
   utilidadPeriodo,
   valorInventario,
+  type FilaDeduccion,
   type ResumenDia,
 } from '../../db/reportes';
+import { labelSubcat } from '../../db/salidas';
 import { formatCOP } from '../../db/util';
 import {
   compartirReportePdf,
@@ -55,6 +59,9 @@ type DatosMes = {
   compras: number;
   utilidad: number;
   cobertura: number;
+  colegio: number;
+  deducciones: number;
+  deduccionesFilas: FilaDeduccion[];
 };
 
 /**
@@ -68,6 +75,14 @@ function coberturaTexto(cobertura?: number): string | undefined {
   return pct === 0
     ? 'Aún sin costo cargado en los productos vendidos'
     : `Calculada sobre el ${pct}% de las ventas con costo conocido`;
+}
+
+/** Desglose de deducciones por subcategoría, para la nota del KPI. */
+function desgloseDeducciones(filas?: FilaDeduccion[]): string | undefined {
+  if (!filas || filas.length === 0) return undefined;
+  return filas
+    .map((f) => `${labelSubcat(f.subcategoria)}: ${formatCOP(f.total)}`)
+    .join(' · ');
 }
 
 type Inventario = { alCosto: number; alPrecio: number };
@@ -161,12 +176,17 @@ export default function ReportesScreen() {
         totalPorTipo(db, 'venta', desde, hasta),
         totalPorTipo(db, 'compra', desde, hasta),
         utilidadPeriodo(db, desde, hasta),
-      ]).then(([ventas, compras, util]) =>
+        salidasColegio(db, { desde, hasta }),
+        deducciones(db, { desde, hasta }),
+      ]).then(([ventas, compras, util, colegio, ded]) =>
         setD({
           ventas,
           compras,
           utilidad: util.utilidad,
           cobertura: util.cobertura,
+          colegio: colegio.total,
+          deducciones: ded.total,
+          deduccionesFilas: ded.filas,
         })
       );
     }, [db, mesOffset])
@@ -290,6 +310,19 @@ export default function ReportesScreen() {
           color={colors.venta}
           big
           caption={coberturaTexto(d?.cobertura)}
+        />
+        <Kpi
+          icon="school"
+          label="Entregado al colegio"
+          value={d?.colegio}
+          color={colors.salida}
+        />
+        <Kpi
+          icon="exit"
+          label="Deducciones"
+          value={d?.deducciones}
+          color={colors.salida}
+          caption={desgloseDeducciones(d?.deduccionesFilas)}
         />
 
         <Text style={styles.section}>Reportes imprimibles</Text>

@@ -265,14 +265,16 @@ async function restaurarImpl(db: SQLiteDatabase): Promise<number> {
       const t = d.data() as Transaccion;
       await db.runAsync(
         `INSERT OR REPLACE INTO transacciones
-           (id, tipo, fecha_hora, cliente_proveedor, motivo, total,
-            created_at, updated_at, synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+           (id, tipo, fecha_hora, cliente_proveedor, motivo, categoria,
+            subcategoria, total, created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
         t.id,
         t.tipo,
         t.fecha_hora,
         t.cliente_proveedor ?? null,
         t.motivo ?? null,
+        t.categoria ?? null,
+        t.subcategoria ?? null,
         t.total,
         t.created_at,
         t.updated_at

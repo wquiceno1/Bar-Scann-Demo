@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import ScannerView from '../../components/ScannerView';
 import { EmptyState, Input, Screen } from '../../components/ui';
+import { etiquetaSalida } from '../../db/salidas';
 import { listarTransacciones } from '../../db/transacciones';
 import type { TipoTransaccion, Transaccion } from '../../db/types';
 import { formatCOP } from '../../db/util';
@@ -315,30 +316,33 @@ export default function HistorialScreen() {
             }
           />
         }
-        renderItem={({ item }) => (
-          <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-            onPress={() => router.push(`/detalle/${item.id}`)}
-          >
-            <View style={[styles.badge, { backgroundColor: COLOR[item.tipo] }]}>
-              <Ionicons
-                name={ICONO[item.tipo]}
-                size={18}
-                color={colors.textInverse}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.tipo}>
-                {ETIQUETA[item.tipo]}
-                {item.cliente_proveedor ? ` · ${item.cliente_proveedor}` : ''}
-              </Text>
-              <Text style={styles.fecha}>{item.fecha_hora.slice(11, 16)}</Text>
-            </View>
-            {item.tipo !== 'ajuste' && (
-              <Text style={styles.total}>{formatCOP(item.total)}</Text>
-            )}
-          </Pressable>
-        )}
+        renderItem={({ item }) => {
+          const salida = etiquetaSalida(item.categoria, item.subcategoria);
+          const badgeColor = salida ? colors.salida : COLOR[item.tipo];
+          const icono = salida ? 'exit' : ICONO[item.tipo];
+          const etiqueta = salida ?? ETIQUETA[item.tipo];
+          const mostrarTotal = item.tipo !== 'ajuste' || salida != null;
+          return (
+            <Pressable
+              style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+              onPress={() => router.push(`/detalle/${item.id}`)}
+            >
+              <View style={[styles.badge, { backgroundColor: badgeColor }]}>
+                <Ionicons name={icono} size={18} color={colors.textInverse} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tipo}>
+                  {etiqueta}
+                  {item.cliente_proveedor ? ` · ${item.cliente_proveedor}` : ''}
+                </Text>
+                <Text style={styles.fecha}>{item.fecha_hora.slice(11, 16)}</Text>
+              </View>
+              {mostrarTotal && (
+                <Text style={styles.total}>{formatCOP(item.total)}</Text>
+              )}
+            </Pressable>
+          );
+        }}
       />
     </Screen>
   );

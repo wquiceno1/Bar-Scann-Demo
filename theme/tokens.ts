@@ -8,6 +8,7 @@ export const colors = {
   venta: '#16a34a',
   compra: '#2563eb',
   ajuste: '#d97706',
+  salida: '#0d9488', // salidas sin venta (colegio / deducciones)
   danger: '#dc2626',
 
   // Superficies

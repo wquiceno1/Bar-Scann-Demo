@@ -3,6 +3,7 @@ import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Card, Screen } from '../../components/ui';
+import { etiquetaSalida } from '../../db/salidas';
 import { getTransaccion } from '../../db/transacciones';
 import type { Transaccion, TransaccionItem } from '../../db/types';
 import { formatCOP } from '../../db/util';
@@ -39,14 +40,17 @@ export default function DetalleScreen() {
     );
   }
 
+  const salida = etiquetaSalida(tx.categoria, tx.subcategoria);
+  const mostrarTotal = tx.tipo !== 'ajuste' || salida != null;
+
   return (
     <Screen padded>
-      <Text style={styles.tipo}>{ETIQUETA[tx.tipo]}</Text>
+      <Text style={styles.tipo}>{salida ?? ETIQUETA[tx.tipo]}</Text>
       <Text style={styles.meta}>{tx.fecha_hora.replace('T', ' ')}</Text>
       {tx.cliente_proveedor ? (
         <Text style={styles.meta}>{tx.cliente_proveedor}</Text>
       ) : null}
-      {tx.motivo ? <Text style={styles.meta}>Motivo: {tx.motivo}</Text> : null}
+      {tx.motivo ? <Text style={styles.meta}>Nota: {tx.motivo}</Text> : null}
 
       <Card flat style={styles.list}>
         <FlatList
@@ -64,7 +68,7 @@ export default function DetalleScreen() {
         />
       </Card>
 
-      {tx.tipo !== 'ajuste' && (
+      {mostrarTotal && (
         <Text style={styles.total}>Total: {formatCOP(tx.total)}</Text>
       )}
     </Screen>

@@ -14,6 +14,7 @@ type Variant =
   | 'venta'
   | 'compra'
   | 'ajuste'
+  | 'salida'
   | 'danger'
   | 'secondary'
   | 'ghost';
@@ -24,6 +25,7 @@ const BG: Record<Variant, string> = {
   venta: colors.venta,
   compra: colors.compra,
   ajuste: colors.ajuste,
+  salida: colors.salida,
   danger: colors.danger,
   secondary: colors.surface,
   ghost: 'transparent',
