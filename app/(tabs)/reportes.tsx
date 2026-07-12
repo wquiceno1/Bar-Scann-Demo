@@ -12,7 +12,6 @@ import {
   resumenVentasDia,
   salidasColegio,
   totalPorTipo,
-  utilidadPeriodo,
   valorInventario,
   type FilaDeduccion,
   type ResumenDia,
@@ -57,25 +56,10 @@ function labelMes(offset: number): string {
 type DatosMes = {
   ventas: number;
   compras: number;
-  utilidad: number;
-  cobertura: number;
   colegio: number;
   deducciones: number;
   deduccionesFilas: FilaDeduccion[];
 };
-
-/**
- * Nota bajo la utilidad: aclara sobre qué parte de las ventas se pudo calcular
- * (las que tienen costo conocido). Con cobertura total no hace falta aclarar.
- */
-function coberturaTexto(cobertura?: number): string | undefined {
-  if (cobertura == null) return undefined;
-  const pct = Math.round(cobertura * 100);
-  if (pct >= 100) return undefined;
-  return pct === 0
-    ? 'Aún sin costo cargado en los productos vendidos'
-    : `Calculada sobre el ${pct}% de las ventas con costo conocido`;
-}
 
 /** Desglose de deducciones por subcategoría, para la nota del KPI. */
 function desgloseDeducciones(filas?: FilaDeduccion[]): string | undefined {
@@ -175,15 +159,12 @@ export default function ReportesScreen() {
       Promise.all([
         totalPorTipo(db, 'venta', desde, hasta),
         totalPorTipo(db, 'compra', desde, hasta),
-        utilidadPeriodo(db, desde, hasta),
         salidasColegio(db, { desde, hasta }),
         deducciones(db, { desde, hasta }),
-      ]).then(([ventas, compras, util, colegio, ded]) =>
+      ]).then(([ventas, compras, colegio, ded]) =>
         setD({
           ventas,
           compras,
-          utilidad: util.utilidad,
-          cobertura: util.cobertura,
           colegio: colegio.total,
           deducciones: ded.total,
           deduccionesFilas: ded.filas,
@@ -238,13 +219,6 @@ export default function ReportesScreen() {
           color={colors.venta}
           big
         />
-        <Kpi
-          icon="trending-up"
-          label="Utilidad del día"
-          value={resumen?.utilidad}
-          color={colors.venta}
-          caption={coberturaTexto(resumen?.cobertura)}
-        />
 
         {mostrarPicker && (
           <DateTimePicker
@@ -261,7 +235,6 @@ export default function ReportesScreen() {
         )}
 
         <Text style={styles.section}>Inventario actual</Text>
-        <Kpi icon="cube" label="Total invertido" value={inv?.alCosto} />
         <Kpi
           icon="pricetag"
           label="Valor del inventario"
@@ -302,14 +275,6 @@ export default function ReportesScreen() {
           label="Compras"
           value={d?.compras}
           color={colors.compra}
-        />
-        <Kpi
-          icon="trending-up"
-          label="Utilidad (ventas − costo vendido)"
-          value={d?.utilidad}
-          color={colors.venta}
-          big
-          caption={coberturaTexto(d?.cobertura)}
         />
         <Kpi
           icon="school"
