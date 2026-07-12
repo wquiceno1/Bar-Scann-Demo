@@ -30,6 +30,13 @@ export async function getMargenGeneral(db: SQLiteDatabase): Promise<number> {
   return Number.isFinite(n) ? n : 30;
 }
 
+/** Porcentaje del salario mensual (7% por defecto). */
+export async function getSalarioPct(db: SQLiteDatabase): Promise<number> {
+  const valor = await getConfig(db, 'salario_pct');
+  const n = valor != null ? Number(valor) : NaN;
+  return Number.isFinite(n) ? n : 7;
+}
+
 /** Devuelve y consume el siguiente correlativo para códigos internos de granel. */
 export async function nextCodigoInterno(db: SQLiteDatabase): Promise<string> {
   let n = 0;

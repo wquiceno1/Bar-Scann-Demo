@@ -5,6 +5,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Button, Card, Screen } from '../../components/ui';
+import { getSalarioPct } from '../../db/configuracion';
 import {
   deducciones,
   inventarioInicial,
@@ -83,12 +84,21 @@ export default function ReportesScreen() {
   const [resumen, setResumen] = useState<ResumenDia | null>(null);
   const [mostrarPicker, setMostrarPicker] = useState(false);
   const [mesOffset, setMesOffset] = useState(0);
+  const [salarioPct, setSalarioPct] = useState(7);
+  const [salarioAbierto, setSalarioAbierto] = useState(false);
   const [pdfCargando, setPdfCargando] = useState<
     null | 'inv' | 'histo' | 'dia' | 'mes'
   >(null);
 
   const esHoy = dia === hoyStr();
   const esMesActual = mesOffset === 0;
+
+  // Base del salario del mes = ventas + compras + transporte + colegio +
+  // deducciones. El salario es un % configurable (7% por defecto) de esa base.
+  const salarioBase = d
+    ? d.ventas + d.compras + d.transporte + d.colegio + d.deducciones
+    : 0;
+  const salario = Math.round((salarioBase * salarioPct) / 100);
 
   // Genera un PDF y abre el diálogo nativo de compartir/imprimir. `construir`
   // devuelve null cuando el reporte no tiene filas.
@@ -152,6 +162,13 @@ export default function ReportesScreen() {
   useFocusEffect(
     useCallback(() => {
       valorInventario(db).then(setInv);
+    }, [db])
+  );
+
+  // Porcentaje del salario (configurable en Ajustes): se recarga al volver.
+  useFocusEffect(
+    useCallback(() => {
+      getSalarioPct(db).then(setSalarioPct);
     }, [db])
   );
 
@@ -300,6 +317,56 @@ export default function ReportesScreen() {
           caption={desgloseDeducciones(d?.deduccionesFilas)}
         />
 
+        <Card style={styles.salarioCard}>
+          <Pressable
+            style={styles.salarioHead}
+            onPress={() => setSalarioAbierto((v) => !v)}
+          >
+            <View
+              style={[
+                styles.kpiIcon,
+                { backgroundColor: colors.primary + '1a' },
+              ]}
+            >
+              <Ionicons name="wallet" size={20} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.kpiLabel}>Mi salario del mes ({salarioPct}%)</Text>
+              <Text
+                style={[
+                  styles.kpiValue,
+                  styles.kpiValueBig,
+                  { color: colors.primary },
+                ]}
+              >
+                {d == null ? '—' : formatCOP(salario)}
+              </Text>
+            </View>
+            <Ionicons
+              name={salarioAbierto ? 'chevron-up' : 'chevron-down'}
+              size={22}
+              color={colors.textMuted}
+            />
+          </Pressable>
+          {salarioAbierto && (
+            <View style={styles.salarioBody}>
+              <FilaSalario label="Ventas" value={d?.ventas} />
+              <FilaSalario label="Compras" value={d?.compras} />
+              <FilaSalario label="Transporte" value={d?.transporte} />
+              <FilaSalario label="Entregado al colegio" value={d?.colegio} />
+              <FilaSalario label="Deducciones" value={d?.deducciones} />
+              <View style={styles.salarioDivider} />
+              <FilaSalario label="Base (suma)" value={salarioBase} bold />
+              <FilaSalario
+                label={`Salario (${salarioPct}%)`}
+                value={salario}
+                bold
+                color={colors.primary}
+              />
+            </View>
+          )}
+        </Card>
+
         <Text style={styles.section}>Reportes imprimibles</Text>
         <Card style={{ gap: spacing.sm }}>
           <Text style={styles.pdfHelp}>
@@ -370,6 +437,28 @@ function Kpi({
   );
 }
 
+/** Fila del desglose del salario: etiqueta a la izquierda, valor a la derecha. */
+function FilaSalario({
+  label,
+  value,
+  bold = false,
+  color = colors.text,
+}: {
+  label: string;
+  value?: number;
+  bold?: boolean;
+  color?: string;
+}) {
+  return (
+    <View style={styles.filaSalario}>
+      <Text style={[styles.filaLabel, bold && styles.filaBold]}>{label}</Text>
+      <Text style={[styles.filaValue, bold && styles.filaBold, { color }]}>
+        {value == null ? '—' : formatCOP(value)}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   content: { padding: spacing.lg, gap: spacing.md },
   section: {
@@ -431,4 +520,25 @@ const styles = StyleSheet.create({
   kpiCaption: { fontSize: font.xs, color: colors.textMuted, marginTop: 2 },
   kpiValue: { fontSize: font.xl, fontWeight: '800', marginTop: 2 },
   kpiValueBig: { fontSize: font.xxl },
+  salarioCard: { gap: spacing.sm },
+  salarioHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  salarioBody: {
+    gap: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+  },
+  salarioDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.xs,
+  },
+  filaSalario: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  filaLabel: { fontSize: font.md, color: colors.textMuted },
+  filaValue: { fontSize: font.md, color: colors.text, fontWeight: '600' },
+  filaBold: { fontWeight: '800', color: colors.text },
 });

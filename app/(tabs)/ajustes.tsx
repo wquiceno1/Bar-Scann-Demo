@@ -1,11 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { User } from 'firebase/auth';
 import { Button, Card, Input, Screen } from '../../components/ui';
-import { getMargenGeneral, setConfig } from '../../db/configuracion';
+import {
+  getMargenGeneral,
+  getSalarioPct,
+  setConfig,
+} from '../../db/configuracion';
 import {
   cerrarSesion,
   huellaConfigurada,
@@ -51,6 +55,8 @@ export default function AjustesScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const [margen, setMargen] = useState('');
+  const [salario, setSalario] = useState('');
+  const [pctAbierto, setPctAbierto] = useState(false);
 
   // --- Respaldo ---
   const [usuario, setUsuario] = useState<User | null>(usuarioActual());
@@ -85,19 +91,26 @@ export default function AjustesScreen() {
   useFocusEffect(
     useCallback(() => {
       getMargenGeneral(db).then((m) => setMargen(String(m)));
+      getSalarioPct(db).then((s) => setSalario(String(s)));
       refrescar();
       return onCambioSesion(() => refrescar());
     }, [db, refrescar])
   );
 
-  const guardarMargen = async () => {
-    const n = Number(margen);
-    if (!Number.isFinite(n) || n < 0) {
+  const guardarPorcentajes = async () => {
+    const m = Number(margen);
+    const s = Number(salario);
+    if (!Number.isFinite(m) || m < 0) {
       Alert.alert('Margen inválido', 'Ingresa un porcentaje válido.');
       return;
     }
-    await setConfig(db, 'margen_general_pct', String(n));
-    toast(`Margen general guardado: ${n}%`);
+    if (!Number.isFinite(s) || s < 0) {
+      Alert.alert('Salario inválido', 'Ingresa un porcentaje válido.');
+      return;
+    }
+    await setConfig(db, 'margen_general_pct', String(m));
+    await setConfig(db, 'salario_pct', String(s));
+    toast('Porcentajes guardados');
   };
 
   const login = async () => {
@@ -302,15 +315,49 @@ export default function AjustesScreen() {
 
   return (
     <Screen padded scroll>
-      <Card style={{ gap: spacing.md }}>
-        <Input
-          label="Margen general (%)"
-          hint="Se usa para sugerir precios en modo “calcular con margen”, salvo que el producto tenga su propio margen."
-          keyboardType="numeric"
-          value={margen}
-          onChangeText={setMargen}
-        />
-        <Button label="Guardar" icon="save" onPress={guardarMargen} />
+      <Card style={{ gap: spacing.sm }}>
+        <Pressable
+          style={styles.pctHead}
+          onPress={() => setPctAbierto((v) => !v)}
+        >
+          <View style={styles.head}>
+            <Ionicons name="options-outline" size={20} color={colors.primary} />
+            <Text style={styles.title}>Porcentajes</Text>
+          </View>
+          <Ionicons
+            name={pctAbierto ? 'chevron-up' : 'chevron-down'}
+            size={20}
+            color={colors.textMuted}
+          />
+        </Pressable>
+        {pctAbierto && (
+          <>
+            <Text style={styles.help}>
+              Margen para sugerir precios (modo “calcular con margen”) y el
+              porcentaje de tu salario mensual sobre ventas, compras, transporte
+              y deducciones.
+            </Text>
+            <View style={styles.pctRow}>
+              <View style={styles.pctCol}>
+                <Input
+                  label="Margen (%)"
+                  keyboardType="numeric"
+                  value={margen}
+                  onChangeText={setMargen}
+                />
+              </View>
+              <View style={styles.pctCol}>
+                <Input
+                  label="Salario (%)"
+                  keyboardType="numeric"
+                  value={salario}
+                  onChangeText={setSalario}
+                />
+              </View>
+            </View>
+            <Button label="Guardar" icon="save" onPress={guardarPorcentajes} />
+          </>
+        )}
       </Card>
 
       <Card style={[styles.respaldo, { gap: spacing.sm }]}>
@@ -484,4 +531,11 @@ const styles = StyleSheet.create({
   respaldo: { marginTop: spacing.lg },
   head: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   title: { fontSize: font.md, fontWeight: '700', color: colors.text },
+  pctHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pctRow: { flexDirection: 'row', gap: spacing.sm },
+  pctCol: { flex: 1 },
 });
