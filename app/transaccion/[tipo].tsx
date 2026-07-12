@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -49,6 +50,12 @@ export default function TransaccionScreen() {
   const [guardando, setGuardando] = useState(false);
   const [buscadorVisible, setBuscadorVisible] = useState(false);
   const [margenGeneral, setMargenGeneral] = useState<number | null>(null);
+  // Confirmación al finalizar una compra si algún costo supera el precio de venta
+  // (síntoma típico de invertir cantidad y costo). Guarda las líneas a persistir.
+  const [alertaCosto, setAlertaCosto] = useState<{
+    lineas: LineaBorrador[];
+    costosos: LineaBorrador[];
+  } | null>(null);
 
   useEffect(() => {
     getMargenGeneral(db).then(setMargenGeneral);
@@ -214,6 +221,7 @@ export default function TransaccionScreen() {
   );
 
   const cambiarCantidad = (barcode: string, delta: number) => {
+    limpiarTexto(barcode);
     setLineas((prev) =>
       prev
         .map((l) => {
@@ -226,6 +234,18 @@ export default function TransaccionScreen() {
           return { ...l, cantidad };
         })
         .filter((l) => l.cantidad !== 0)
+    );
+  };
+
+  // Compra: edición directa de la cantidad, para no tener que pulsar + muchas
+  // veces al ingresar grandes cantidades. Se guarda el texto crudo mientras se
+  // escribe (permite vaciar el campo) y el número se recupera al salir del foco.
+  const editarCantidad = (barcode: string, texto: string) => {
+    const limpio = texto.replace(/[^\d]/g, '');
+    setCantTexto((t) => ({ ...t, [barcode]: limpio }));
+    const n = limpio === '' ? 0 : parseInt(limpio, 10) || 0;
+    setLineas((prev) =>
+      prev.map((l) => (l.barcode === barcode ? { ...l, cantidad: n } : l))
     );
   };
 
@@ -307,10 +327,32 @@ export default function TransaccionScreen() {
     );
   };
 
-  const finalizar = async () => {
-    // En ajuste se ignoran las líneas con delta 0 (sin cambio de stock).
+  // Persiste la transacción. Se llama tras pasar las validaciones (o tras
+  // confirmar el aviso de costo).
+  const guardar = async (lineasValidas: LineaBorrador[]) => {
+    setGuardando(true);
+    try {
+      await finalizarTransaccion(db, {
+        tipo,
+        cliente_proveedor: contraparte.trim() || null,
+        motivo: tipo === 'ajuste' ? contraparte.trim() || null : null,
+        lineas: lineasValidas,
+      });
+      toast(TITULOS[tipo] + ' guardada');
+      router.back();
+    } catch (e) {
+      setGuardando(false);
+      Alert.alert('Error', String(e));
+    }
+  };
+
+  const finalizar = () => {
+    // En ajuste se ignoran las líneas con delta 0; en venta/compra se descartan
+    // las de cantidad 0 (p. ej. si se vació el campo editable de cantidad).
     const lineasValidas =
-      tipo === 'ajuste' ? lineas.filter((l) => l.cantidad !== 0) : lineas;
+      tipo === 'ajuste'
+        ? lineas.filter((l) => l.cantidad !== 0)
+        : lineas.filter((l) => l.cantidad > 0);
     if (lineasValidas.length === 0) {
       Alert.alert(
         'Sin cambios',
@@ -331,21 +373,20 @@ export default function TransaccionScreen() {
         );
         return;
       }
+      // Aviso: costo por unidad mayor que el precio de venta (probable error de
+      // tipeo, como invertir cantidad y costo). Se confirma antes de guardar.
+      const costosos = lineasValidas.filter(
+        (l) =>
+          l.precio_venta_snapshot != null &&
+          l.precio_venta_snapshot > 0 &&
+          l.precio_unitario_snapshot > l.precio_venta_snapshot
+      );
+      if (costosos.length > 0) {
+        setAlertaCosto({ lineas: lineasValidas, costosos });
+        return;
+      }
     }
-    setGuardando(true);
-    try {
-      await finalizarTransaccion(db, {
-        tipo,
-        cliente_proveedor: contraparte.trim() || null,
-        motivo: tipo === 'ajuste' ? contraparte.trim() || null : null,
-        lineas: lineasValidas,
-      });
-      toast(TITULOS[tipo] + ' guardada');
-      router.back();
-    } catch (e) {
-      setGuardando(false);
-      Alert.alert('Error', String(e));
-    }
+    guardar(lineasValidas);
   };
 
   return (
@@ -544,7 +585,24 @@ export default function TransaccionScreen() {
                   >
                     <Ionicons name="remove" size={18} color={colors.text} />
                   </Pressable>
-                  <Text style={styles.qty}>{item.cantidad}</Text>
+                  {tipo === 'compra' ? (
+                    <TextInput
+                      style={styles.qtyInput}
+                      keyboardType="numeric"
+                      selectTextOnFocus
+                      value={
+                        cantTexto[item.barcode] !== undefined
+                          ? cantTexto[item.barcode]
+                          : String(item.cantidad)
+                      }
+                      onChangeText={(t) => editarCantidad(item.barcode, t)}
+                      onBlur={() => limpiarTexto(item.barcode)}
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  ) : (
+                    <Text style={styles.qty}>{item.cantidad}</Text>
+                  )}
                   <Pressable
                     style={[styles.qtyBtn, topeVenta && styles.qtyBtnOff]}
                     disabled={topeVenta}
@@ -600,6 +658,59 @@ export default function TransaccionScreen() {
           onPress={finalizar}
         />
       </View>
+
+      <Modal
+        visible={alertaCosto != null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAlertaCosto(null)}
+      >
+        <View style={styles.alertaOverlay}>
+          <View style={styles.alertaCard}>
+            <Text style={styles.alertaTitulo}>⚠ Revisá el costo</Text>
+            <Text style={styles.alertaCuerpo}>
+              {alertaCosto?.costosos.length === 1
+                ? 'En este producto el costo por unidad es mayor que el precio de venta:'
+                : 'En estos productos el costo por unidad es mayor que el precio de venta:'}
+            </Text>
+            {alertaCosto?.costosos.map((l) => (
+              <Text key={l.barcode} style={styles.alertaItem}>
+                • {l.nombre}: costo {formatCOP(l.precio_unitario_snapshot)} {'>'} venta{' '}
+                {formatCOP(l.precio_venta_snapshot ?? 0)}
+              </Text>
+            ))}
+            <Text style={styles.alertaCuerpo}>
+              ¿Seguro que querés guardar así? Revisá que no hayas invertido la
+              cantidad y el costo.
+            </Text>
+            <View style={styles.alertaBotones}>
+              <Pressable
+                style={({ pressed }) => [styles.alertaBtn, pressed && styles.pressed]}
+                onPress={() => setAlertaCosto(null)}
+              >
+                <Text style={styles.alertaBtnRevisar}>Revisar</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.alertaBtn,
+                  styles.alertaBtnGuardar,
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => {
+                  if (!alertaCosto) return;
+                  const ls = alertaCosto.lineas;
+                  setAlertaCosto(null);
+                  guardar(ls);
+                }}
+              >
+                <Text style={styles.alertaBtnGuardarText}>
+                  Guardar de todos modos
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -748,6 +859,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   qty: { minWidth: 28, textAlign: 'center', fontSize: font.lg, fontWeight: '700' },
+  qtyInput: {
+    minWidth: 56,
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    fontSize: font.lg,
+    fontWeight: '700',
+    color: colors.text,
+    backgroundColor: colors.surfaceAlt,
+  },
   subtotal: {
     minWidth: 84,
     textAlign: 'right',
@@ -769,4 +893,41 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontSize: font.md, color: colors.textMuted, fontWeight: '600' },
   totalValue: { fontSize: font.xxl, fontWeight: '800' },
+  alertaOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  alertaCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  alertaTitulo: { fontSize: font.lg, fontWeight: '800', color: colors.danger },
+  alertaCuerpo: { fontSize: font.md, color: colors.text },
+  alertaItem: { fontSize: font.md, fontWeight: '800', color: colors.danger },
+  alertaBotones: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  alertaBtn: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+  },
+  alertaBtnRevisar: { fontSize: font.md, fontWeight: '800', color: colors.primary },
+  alertaBtnGuardar: { backgroundColor: colors.danger },
+  alertaBtnGuardarText: {
+    fontSize: font.md,
+    fontWeight: '800',
+    color: colors.textInverse,
+  },
 });
