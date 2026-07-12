@@ -15,6 +15,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import type { Producto, Transaccion, TransaccionItem } from '../db/types';
+import type { Transporte } from '../db/transportes';
 import { getConfig, setConfig } from '../db/configuracion';
 import { usuarioActual } from './auth';
 import { db as firestore } from './firebase';
@@ -22,7 +23,12 @@ import { db as firestore } from './firebase';
 // writeBatch admite hasta 500 operaciones; dejamos margen.
 const LIMITE_LOTE = 400;
 
-const TABLAS_SYNC = ['productos', 'transacciones', 'transaccion_items'] as const;
+const TABLAS_SYNC = [
+  'productos',
+  'transacciones',
+  'transaccion_items',
+  'transportes',
+] as const;
 
 export type EstadoRespaldo = {
   ultimoRespaldo: string | null;
@@ -162,11 +168,15 @@ async function respaldarImpl(db: SQLiteDatabase): Promise<number> {
   const items = await db.getAllAsync<TransaccionItem>(
     'SELECT * FROM transaccion_items WHERE synced = 0'
   );
+  const transportes = await db.getAllAsync<Transporte>(
+    'SELECT * FROM transportes WHERE synced = 0'
+  );
 
   const ops: { col: string; id: string; data: DocumentData }[] = [
     ...productos.map((p) => ({ col: 'productos', id: p.barcode, data: p })),
     ...transacciones.map((t) => ({ col: 'transacciones', id: t.id, data: t })),
     ...items.map((i) => ({ col: 'transaccion_items', id: i.id, data: i })),
+    ...transportes.map((tr) => ({ col: 'transportes', id: tr.id, data: tr })),
   ];
 
   for (let i = 0; i < ops.length; i += LIMITE_LOTE) {
@@ -210,6 +220,12 @@ async function respaldarImpl(db: SQLiteDatabase): Promise<number> {
       'id',
       items.map((i) => i.id)
     );
+    await marcarSincronizado(
+      db,
+      'transportes',
+      'id',
+      transportes.map((tr) => tr.id)
+    );
   });
 
   await setConfig(db, 'last_backup_at', new Date().toISOString());
@@ -228,12 +244,14 @@ export function restaurar(db: SQLiteDatabase): Promise<number> {
 async function restaurarImpl(db: SQLiteDatabase): Promise<number> {
   if (!usuarioActual()) throw new Error('Sesión no iniciada');
 
-  const [productos, transacciones, items, config] = await Promise.all([
-    getDocs(collection(firestore, 'productos')),
-    getDocs(collection(firestore, 'transacciones')),
-    getDocs(collection(firestore, 'transaccion_items')),
-    getDocs(collection(firestore, 'configuracion')),
-  ]);
+  const [productos, transacciones, items, transportes, config] =
+    await Promise.all([
+      getDocs(collection(firestore, 'productos')),
+      getDocs(collection(firestore, 'transacciones')),
+      getDocs(collection(firestore, 'transaccion_items')),
+      getDocs(collection(firestore, 'transportes')),
+      getDocs(collection(firestore, 'configuracion')),
+    ]);
 
   let total = 0;
   await db.withTransactionAsync(async () => {
@@ -297,6 +315,25 @@ async function restaurarImpl(db: SQLiteDatabase): Promise<number> {
         it.costo_snapshot ?? null,
         it.precio_unitario_snapshot,
         it.subtotal
+      );
+      total++;
+    }
+
+    for (const d of transportes.docs) {
+      const tr = d.data() as Transporte;
+      await db.runAsync(
+        `INSERT OR REPLACE INTO transportes
+           (id, fecha_hora, monto, transportador, detalle, foto,
+            created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        tr.id,
+        tr.fecha_hora,
+        tr.monto,
+        tr.transportador ?? null,
+        tr.detalle ?? null,
+        tr.foto ?? null,
+        tr.created_at,
+        tr.updated_at
       );
       total++;
     }

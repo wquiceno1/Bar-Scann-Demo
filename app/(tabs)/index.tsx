@@ -73,6 +73,13 @@ export default function OperarScreen() {
           icon="exit"
           color={colors.salida}
         />
+        <Accion
+          onPress={() => router.push('/transporte')}
+          label="Costo de transporte"
+          desc="Registrar un flete pagado"
+          icon="bus"
+          color={colors.transporte}
+        />
       </View>
     </Screen>
   );

@@ -17,6 +17,7 @@ import {
   type ResumenDia,
 } from '../../db/reportes';
 import { labelSubcat } from '../../db/salidas';
+import { totalTransporte } from '../../db/transportes';
 import { formatCOP } from '../../db/util';
 import {
   compartirReportePdf,
@@ -56,6 +57,7 @@ function labelMes(offset: number): string {
 type DatosMes = {
   ventas: number;
   compras: number;
+  transporte: number;
   colegio: number;
   deducciones: number;
   deduccionesFilas: FilaDeduccion[];
@@ -159,12 +161,14 @@ export default function ReportesScreen() {
       Promise.all([
         totalPorTipo(db, 'venta', desde, hasta),
         totalPorTipo(db, 'compra', desde, hasta),
+        totalTransporte(db, { desde, hasta }),
         salidasColegio(db, { desde, hasta }),
         deducciones(db, { desde, hasta }),
-      ]).then(([ventas, compras, colegio, ded]) =>
+      ]).then(([ventas, compras, transporte, colegio, ded]) =>
         setD({
           ventas,
           compras,
+          transporte,
           colegio: colegio.total,
           deducciones: ded.total,
           deduccionesFilas: ded.filas,
@@ -275,6 +279,12 @@ export default function ReportesScreen() {
           label="Compras"
           value={d?.compras}
           color={colors.compra}
+        />
+        <Kpi
+          icon="bus"
+          label="Transporte"
+          value={d?.transporte}
+          color={colors.transporte}
         />
         <Kpi
           icon="school"

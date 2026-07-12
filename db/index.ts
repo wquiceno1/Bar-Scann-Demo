@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DB_NAME = 'inventario.db';
-const TARGET_VERSION = 2;
+const TARGET_VERSION = 3;
 
 /**
  * Migraciones con el patrón PRAGMA user_version. Se ejecuta desde el `onInit`
@@ -40,6 +40,28 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     );
     await db.execAsync(`PRAGMA user_version = 2`);
     userVersion = 2;
+  }
+
+  if (userVersion < 3) {
+    // Costos de transporte (fletes): gasto puro, sin productos ni stock. Tabla
+    // nueva (aditivo). `foto` se reserva para la fase 2 (recibo).
+    await db.execAsync(
+      `CREATE TABLE IF NOT EXISTS transportes (
+         id            TEXT PRIMARY KEY,
+         fecha_hora    TEXT    NOT NULL,
+         monto         INTEGER NOT NULL,
+         transportador TEXT,
+         detalle       TEXT,
+         foto          TEXT,
+         created_at    TEXT    NOT NULL,
+         updated_at    TEXT    NOT NULL,
+         synced        INTEGER NOT NULL DEFAULT 0
+       );
+       CREATE INDEX IF NOT EXISTS idx_transportes_fecha    ON transportes(fecha_hora);
+       CREATE INDEX IF NOT EXISTS idx_transportes_unsynced ON transportes(synced) WHERE synced = 0;`
+    );
+    await db.execAsync(`PRAGMA user_version = 3`);
+    userVersion = 3;
   }
 
   if (userVersion !== TARGET_VERSION) {
