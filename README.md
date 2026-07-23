@@ -1,4 +1,8 @@
-# BarScan
+<p align="center">
+  <img src="assets/banner.png" alt="BarScan" width="320" />
+</p>
+
+<h1 align="center">BarScan</h1>
 
 > **Inventario y punto de venta offline-first para tiendas de barrio** — construido con Expo + React Native, probado en producción en una tienda comunal rural de Colombia.
 
